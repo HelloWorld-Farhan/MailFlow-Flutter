@@ -10,6 +10,7 @@ class ScheduledEmail {
   final String scheduledDate; // DD/MM/YYYY
   final String scheduledTime; // HH:MM AM/PM
   final String status; // In Process, Success
+  final String? scheduleName; // Added for Multi/PDF group naming
 
   ScheduledEmail({
     required this.id,
@@ -21,6 +22,7 @@ class ScheduledEmail {
     required this.scheduledDate,
     required this.scheduledTime,
     this.status = 'In Process',
+    this.scheduleName,
   });
 
   ScheduledEmail copyWith({
@@ -33,6 +35,7 @@ class ScheduledEmail {
     String? scheduledDate,
     String? scheduledTime,
     String? status,
+    String? scheduleName,
   }) {
     return ScheduledEmail(
       id: id ?? this.id,
@@ -44,6 +47,7 @@ class ScheduledEmail {
       scheduledDate: scheduledDate ?? this.scheduledDate,
       scheduledTime: scheduledTime ?? this.scheduledTime,
       status: status ?? this.status,
+      scheduleName: scheduleName ?? this.scheduleName,
     );
   }
 
@@ -58,6 +62,7 @@ class ScheduledEmail {
       'scheduledDate': scheduledDate,
       'scheduledTime': scheduledTime,
       'status': status,
+      'scheduleName': scheduleName,
     };
   }
 
@@ -72,6 +77,7 @@ class ScheduledEmail {
       scheduledDate: map['scheduledDate'],
       scheduledTime: map['scheduledTime'],
       status: map['status'] ?? 'In Process',
+      scheduleName: map['scheduleName'],
     );
   }
 

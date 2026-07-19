@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scheduled_email.dart';
+import '../models/template_item.dart';
 
 class StorageService {
   static const String _emailsKey = 'scheduled_emails_history';
@@ -65,5 +66,37 @@ class StorageService {
     Set<String> contacts = (prefs.getStringList(_contactsKey) ?? []).toSet();
     contacts.addAll(newEmails);
     await prefs.setStringList(_contactsKey, contacts.toList());
+  }
+  // Templates Storage
+  static const String _templatesKey = 'saved_templates';
+
+  static Future<List<TemplateItem>> getTemplates() async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> savedList = prefs.getStringList(_templatesKey) ?? [];
+    return savedList.map((jsonStr) => TemplateItem.fromJson(jsonStr)).toList();
+  }
+
+  static Future<void> saveTemplate(TemplateItem template) async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> savedList = prefs.getStringList(_templatesKey) ?? [];
+    savedList.add(template.toJson());
+    await prefs.setStringList(_templatesKey, savedList);
+  }
+
+  static Future<void> deleteTemplate(String id) async {
+    final templates = await getTemplates();
+    templates.removeWhere((t) => t.id == id);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_templatesKey, templates.map((t) => t.toJson()).toList());
+  }
+
+  static Future<void> updateTemplate(TemplateItem updatedTemplate) async {
+    final templates = await getTemplates();
+    final index = templates.indexWhere((t) => t.id == updatedTemplate.id);
+    if (index != -1) {
+      templates[index] = updatedTemplate;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_templatesKey, templates.map((t) => t.toJson()).toList());
+    }
   }
 }

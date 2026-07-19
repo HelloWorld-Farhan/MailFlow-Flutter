@@ -9,6 +9,9 @@ import '../utils/date_input_formatter.dart';
 import '../utils/time_input_formatter.dart';
 import '../utils/pdf_parser.dart';
 import '../theme/app_theme.dart';
+import 'settings_screen.dart';
+import 'email_detail_screen.dart';
+import '../models/template_item.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DASHBOARD SCREEN
@@ -106,9 +109,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.contacts_outlined, color: AppTheme.textMid),
-                tooltip: 'Saved Contacts',
-                onPressed: _showAllContacts,
+                icon: const Icon(Icons.group_outlined, color: AppTheme.textMid),
+                tooltip: 'Email Groups',
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmailDetailScreen())),
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings_outlined, color: AppTheme.textMid),
+                tooltip: 'Settings',
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
               ),
               const SizedBox(width: 8),
             ],
@@ -406,9 +414,22 @@ class _EmailCard extends StatelessWidget {
                         maxLines: 1, overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        '${item.recipients.length} recipient${item.recipients.length == 1 ? '' : 's'}  •  ${item.scheduledDate}',
-                        style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textLight),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: AppTheme.primaryBlue.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                            child: Text(item.type, style: const TextStyle(fontFamily: 'Inter', fontSize: 10, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold)),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '${item.recipients.length} recipient${item.recipients.length == 1 ? '' : 's'}  •  ${item.scheduledDate}',
+                              style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textLight),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -625,6 +646,14 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     scopes: ['email', 'https://www.googleapis.com/auth/gmail.send'],
   );
 
+  final _scheduleNameController = TextEditingController();
+
+  List<TemplateItem> _savedSubjects = [];
+  List<TemplateItem> _savedBodies = [];
+  bool _useSavedFormat = false;
+  TemplateItem? _selectedSubject;
+  TemplateItem? _selectedBody;
+
   List<TextEditingController> _emailControllers = [TextEditingController()];
   String? _pdfPath;
   List<String> _pdfEmails = [];
@@ -642,6 +671,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   void initState() {
     super.initState();
     _loadSenders();
+    _loadTemplates();
     if (widget.editEmail != null) {
       final e = widget.editEmail!;
       _sendType = e.type;
@@ -658,9 +688,18 @@ class _ScheduleModalState extends State<_ScheduleModal> {
         _pdfPath = 'Extracted (${e.recipients.length} emails)';
         _pdfEmails = e.recipients;
       }
+      _scheduleNameController.text = e.scheduleName ?? '';
     } else {
       _sendType = 'Single';
     }
+  }
+
+  Future<void> _loadTemplates() async {
+    final templates = await StorageService.getTemplates();
+    setState(() {
+      _savedSubjects = templates.where((t) => t.type == 'Subject').toList();
+      _savedBodies = templates.where((t) => t.type == 'Body').toList();
+    });
   }
 
   Future<void> _loadSenders() async {
@@ -671,6 +710,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   @override
   void dispose() {
     _senderController.dispose();
+    _scheduleNameController.dispose();
     for (var c in _emailControllers) c.dispose();
     _subjectController.dispose();
     _bodyController.dispose();
@@ -800,10 +840,11 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       senderEmail: sender,
       type: _sendType,
       recipients: recipients,
-      subject: _subjectController.text,
-      body: _bodyController.text,
+      subject: _useSavedFormat ? (_selectedSubject?.content ?? '') : _subjectController.text,
+      body: _useSavedFormat ? (_selectedBody?.content ?? '') : _bodyController.text,
       scheduledDate: _dateController.text,
       scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
+      scheduleName: (_sendType == 'Multiple' || _sendType == 'PDF') ? _scheduleNameController.text.trim() : null,
     );
 
     if (widget.editEmail != null) {
@@ -943,6 +984,17 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   const SizedBox(height: 14),
 
                   // Recipient inputs
+                  if (_sendType == 'Multiple' || _sendType == 'PDF') ...[
+                    TextField(
+                      controller: _scheduleNameController,
+                      decoration: const InputDecoration(
+                        hintText: 'Schedule / Group Name',
+                        prefixIcon: Icon(Icons.label_outline, size: 18),
+                      ),
+                    ).animate().fade().slideY(),
+                    const SizedBox(height: 14),
+                  ],
+
                   if (_sendType == 'Single' || _sendType == 'Multiple')
                     ...List.generate(_emailControllers.length, (i) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
@@ -1012,23 +1064,75 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   // ── Section 3: Email content ───────────────────────
                   _SectionHeader(title: '3  Email Content', icon: Icons.edit_note_rounded),
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: _subjectController,
-                    decoration: const InputDecoration(
-                      hintText: 'Subject line',
-                      prefixIcon: Icon(Icons.subject_rounded, size: 18),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() { _useSavedFormat = false; }),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              color: !_useSavedFormat ? AppTheme.primaryBlue : AppTheme.bgSurface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: !_useSavedFormat ? AppTheme.primaryBlue : AppTheme.divider),
+                            ),
+                            child: Center(child: Text('Make New', style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600, color: !_useSavedFormat ? Colors.white : AppTheme.textMid))),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() { _useSavedFormat = true; }),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              color: _useSavedFormat ? AppTheme.primaryBlue : AppTheme.bgSurface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: _useSavedFormat ? AppTheme.primaryBlue : AppTheme.divider),
+                            ),
+                            child: Center(child: Text('Use Saved', style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600, color: _useSavedFormat ? Colors.white : AppTheme.textMid))),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _bodyController,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      hintText: 'Write your email body here…',
-                      alignLabelWithHint: true,
-                      contentPadding: EdgeInsets.all(16),
+                  const SizedBox(height: 14),
+                  if (!_useSavedFormat) ...[
+                    TextField(
+                      controller: _subjectController,
+                      decoration: const InputDecoration(
+                        hintText: 'Subject line',
+                        prefixIcon: Icon(Icons.subject_rounded, size: 18),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _bodyController,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        hintText: 'Write your email body here…',
+                        alignLabelWithHint: true,
+                        contentPadding: EdgeInsets.all(16),
+                      ),
+                    ),
+                  ] else ...[
+                    DropdownButtonFormField<TemplateItem>(
+                      decoration: const InputDecoration(labelText: 'Select Subject', prefixIcon: Icon(Icons.subject_rounded, size: 18)),
+                      value: _selectedSubject,
+                      items: _savedSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s.name))).toList(),
+                      onChanged: (v) => setState(() => _selectedSubject = v),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<TemplateItem>(
+                      decoration: const InputDecoration(labelText: 'Select Body', prefixIcon: Icon(Icons.edit_note_rounded, size: 18)),
+                      value: _selectedBody,
+                      items: _savedBodies.map((b) => DropdownMenuItem(value: b, child: Text(b.name))).toList(),
+                      onChanged: (v) => setState(() => _selectedBody = v),
+                    ),
+                  ],
                   const SizedBox(height: 24),
 
                   // ── Section 4: Schedule time ───────────────────────

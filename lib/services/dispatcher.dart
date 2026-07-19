@@ -1,7 +1,16 @@
 import 'dart:async';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:workmanager/workmanager.dart';
 import 'storage_service.dart';
 import 'mail_service.dart';
+
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    await BackgroundDispatcher.checkAndSendEmails();
+    return Future.value(true);
+  });
+}
 
 class BackgroundDispatcher {
   static Timer? _timer;
@@ -11,26 +20,36 @@ class BackgroundDispatcher {
   );
 
   static void start() {
-    print('Starting Background Dispatcher...');
+    print('Starting Background Dispatcher (Foreground Timer + Workmanager)...');
+    
+    // Initialize Workmanager for background execution (min 15 min frequency)
+    Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
+    Workmanager().registerPeriodicTask(
+      "1", 
+      "emailDispatcher", 
+      frequency: const Duration(minutes: 15),
+    );
+
+    // Keep the Foreground Timer for fast execution while app is open
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 30), (timer) async {
-      print('Dispatcher running...');
-      await _checkAndSendEmails();
+      await checkAndSendEmails();
     });
   }
 
   static void stop() {
     _timer?.cancel();
+    Workmanager().cancelAll();
   }
 
-  static Future<void> _checkAndSendEmails() async {
+  static Future<void> checkAndSendEmails() async {
     final emails = await StorageService.getEmails();
     
     for (final email in emails) {
       if (email.status == 'Success') continue; // Already sent
       
       if (_isTimeArrived(email.scheduledDate, email.scheduledTime)) {
-        print('Time arrived for email: \${email.id}. Attempting to send...');
+        print('Time arrived for email: ${email.id}. Attempting to send...');
         
         try {
           // Attempt to get token silently
@@ -51,16 +70,12 @@ class BackgroundDispatcher {
                 // Update local storage status to Success
                 final updatedEmail = email.copyWith(status: 'Success');
                 await StorageService.updateEmail(updatedEmail);
-                print('Email \${email.id} sent and status updated.');
+                print('Email ${email.id} sent and status updated.');
               }
-            } else {
-              print('Failed to get Access Token for sending.');
             }
-          } else {
-            print('User not signed in. Cannot send email \${email.id}');
           }
         } catch (e) {
-          print('Dispatcher error: \$e');
+          print('Dispatcher error: $e');
         }
       }
     }
