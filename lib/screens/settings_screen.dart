@@ -34,102 +34,148 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     final nameController = TextEditingController(text: editItem?.name);
     final contentController = TextEditingController(text: editItem?.content);
 
+    bool _containsHtml(String text) {
+      return RegExp(r'<[a-zA-Z][^>]*>').hasMatch(text);
+    }
+
     showDialog(
       context: context,
       builder: (context) {
-        return Dialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    editItem == null ? 'New $type' : 'Edit $type',
-                    style: const TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark),
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: nameController,
-                    decoration: InputDecoration(
-                      labelText: 'Template Name',
-                      labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid),
-                      floatingLabelBehavior: FloatingLabelBehavior.always,
-                      filled: true,
-                      fillColor: AppTheme.primaryBlue.withOpacity(0.04),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 2)),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: contentController,
-                    minLines: type == 'Body' ? 8 : 4,
-                    maxLines: type == 'Body' ? 15 : 8,
-                    decoration: InputDecoration(
-                      labelText: type == 'Subject' ? 'Subject Line' : 'Email Body',
-                      hintText: type == 'Subject' ? 'Enter subject template...' : 'Enter HTML body template... (e.g. <b>Hello</b>)',
-                      labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid),
-                      floatingLabelBehavior: FloatingLabelBehavior.always,
-                      alignLabelWithHint: true,
-                      filled: true,
-                      fillColor: AppTheme.primaryBlue.withOpacity(0.04),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 2)),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryBlue,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        elevation: 0,
+        String? bodyError;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Dialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        editItem == null ? 'New $type' : 'Edit $type',
+                        style: const TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark),
                       ),
-                      onPressed: () async {
-                        final name = nameController.text.trim();
-                        final content = contentController.text;
-                        if (name.isEmpty || content.trim().isEmpty) return;
-  
-                        final template = TemplateItem(
-                          id: editItem?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-                          name: name,
-                          content: content,
-                          type: type,
-                        );
-  
-                        if (editItem != null) {
-                          await StorageService.updateTemplate(template);
-                        } else {
-                          await StorageService.saveTemplate(template);
-                        }
-  
-                        if (mounted) {
-                          Navigator.pop(context);
-                          _loadTemplates();
-                        }
-                      },
-                      child: Text('Save $type', style: const TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w600)),
-                    ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: nameController,
+                        decoration: InputDecoration(
+                          labelText: 'Template Name',
+                          labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid),
+                          floatingLabelBehavior: FloatingLabelBehavior.always,
+                          filled: true,
+                          fillColor: AppTheme.primaryBlue.withOpacity(0.04),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 2)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: contentController,
+                        minLines: type == 'Body' ? 8 : 4,
+                        maxLines: type == 'Body' ? 15 : 8,
+                        onChanged: (_) {
+                          if (type == 'Body' && bodyError != null) {
+                            setModalState(() => bodyError = null);
+                          }
+                        },
+                        decoration: InputDecoration(
+                          labelText: type == 'Subject' ? 'Subject Line' : 'Email Body (HTML)',
+                          hintText: type == 'Subject' ? 'Enter subject template...' : 'Enter HTML body... (e.g. <b>Hello</b><br>World)',
+                          labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid),
+                          floatingLabelBehavior: FloatingLabelBehavior.always,
+                          alignLabelWithHint: true,
+                          filled: true,
+                          fillColor: AppTheme.primaryBlue.withOpacity(0.04),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: (type == 'Body' && bodyError != null) ? AppTheme.errorRed : AppTheme.primaryBlue.withOpacity(0.2)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: (type == 'Body' && bodyError != null) ? AppTheme.errorRed : AppTheme.primaryBlue, width: 2),
+                          ),
+                        ),
+                      ),
+                      if (type == 'Body' && bodyError != null) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppTheme.errorRed.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppTheme.errorRed.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error_outline_rounded, color: AppTheme.errorRed, size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(child: Text(bodyError!, style: const TextStyle(color: AppTheme.errorRed, fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600))),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryBlue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            elevation: 0,
+                          ),
+                          onPressed: () async {
+                            final name = nameController.text.trim();
+                            final content = contentController.text;
+                            if (name.isEmpty || content.trim().isEmpty) return;
+
+                            // HTML validation for Body only
+                            if (type == 'Body' && !_containsHtml(content)) {
+                              setModalState(() => bodyError = 'Body must contain valid HTML tags (e.g. <p>, <b>, <br>).');
+                              return;
+                            }
+
+                            final template = TemplateItem(
+                              id: editItem?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                              name: name,
+                              content: content,
+                              type: type,
+                            );
+
+                            if (editItem != null) {
+                              await StorageService.updateTemplate(template);
+                            } else {
+                              await StorageService.saveTemplate(template);
+                            }
+
+                            if (mounted) {
+                              Navigator.pop(context);
+                              _loadTemplates();
+                            }
+                          },
+                          child: Text('Save $type', style: const TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
   }
+
 
   Future<void> _deleteTemplate(String id) async {
     await StorageService.deleteTemplate(id);

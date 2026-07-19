@@ -969,6 +969,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     if (!_useSavedFormat) {
       if (_subjectController.text.trim().isEmpty) { _showMsg('subject', 'Subject cannot be empty.'); return; }
       if (_bodyController.text.trim().isEmpty) { _showMsg('body', 'Body cannot be empty.'); return; }
+      if (!RegExp(r'<[a-zA-Z][^>]*>').hasMatch(_bodyController.text)) { _showMsg('body', 'Body must contain HTML tags (e.g. <p>, <b>, <br>).'); return; }
     } else {
       if (_selectedSubject == null) { _showMsg('subject', 'Please select a saved subject.'); return; }
       if (_selectedBody == null) { _showMsg('body', 'Please select a saved body.'); return; }
