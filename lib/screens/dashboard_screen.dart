@@ -1317,10 +1317,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       value: _selectedSubject,
                       items: _savedSubjects.map((s) => DropdownMenuItem(
                         value: s,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text(s.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
-                        ),
+                        child: Text(s.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
                       )).toList(),
                       onChanged: (v) => setState(() => _selectedSubject = v),
                     ),
@@ -1338,10 +1335,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       value: _selectedBody,
                       items: _savedBodies.map((b) => DropdownMenuItem(
                         value: b,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text(b.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
-                        ),
+                        child: Text(b.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
                       )).toList(),
                       onChanged: (v) => setState(() => _selectedBody = v),
                     ),
