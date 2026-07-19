@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -9,7 +8,11 @@ import '../services/storage_service.dart';
 import '../utils/date_input_formatter.dart';
 import '../utils/time_input_formatter.dart';
 import '../utils/pdf_parser.dart';
+import '../theme/app_theme.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  DASHBOARD SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -40,10 +43,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      useSafeArea: true,
       builder: (context) => _ScheduleModal(editEmail: existingEmail),
-    ).then((_) {
-      _loadHistory();
-    });
+    ).then((_) => _loadHistory());
   }
 
   Future<void> _deleteEmail(String id) async {
@@ -54,250 +56,557 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showAllContacts() async {
     final contacts = await StorageService.getExtractedEmails();
     if (!mounted) return;
-    
     showDialog(
       context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: Theme.of(context).cardTheme.color,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            height: MediaQuery.of(context).size.height * 0.7,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Global Contacts', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 22)),
-                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-                  ],
-                ),
-                Text('\${contacts.length} permanently saved emails', style: Theme.of(context).textTheme.bodyMedium),
-                const Divider(height: 32),
-                Expanded(
-                  child: contacts.isEmpty
-                      ? Center(child: Text('No contacts saved yet.', style: Theme.of(context).textTheme.bodyLarge))
-                      : ListView.builder(
-                          physics: const BouncingScrollPhysics(),
-                          itemCount: contacts.length,
-                          itemBuilder: (context, index) {
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                                child: Icon(Icons.person, color: Theme.of(context).primaryColor),
-                              ),
-                              title: Text(contacts[index], style: Theme.of(context).textTheme.bodyLarge),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
-          ),
-        ).animate().scale(duration: 300.ms, curve: Curves.easeOutBack).fade(duration: 300.ms);
-      },
+      builder: (context) => _ContactsDialog(contacts: contacts),
     );
   }
 
   void _showEmailDetails(ScheduledEmail email) {
     showDialog(
       context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: Theme.of(context).cardTheme.color,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Schedule Details', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 22)),
-                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-                    ],
-                  ),
-                  const Divider(height: 32),
-                  _buildDetailRow(Icons.account_circle, 'Sender', email.senderEmail, isValid: true, isAuth: true),
-                  _buildDetailRow(Icons.calendar_today, 'Date', email.scheduledDate),
-                  _buildDetailRow(Icons.access_time, 'Time', email.scheduledTime),
-                  _buildDetailRow(Icons.subject, 'Subject', email.subject.isEmpty ? '(No Subject)' : email.subject),
-                  const SizedBox(height: 16),
-                  Text('Body', style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.05), borderRadius: BorderRadius.circular(8)),
-                    child: Text(email.body.isEmpty ? '(Empty Body)' : email.body, style: Theme.of(context).textTheme.bodyLarge),
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Recipients (\${email.recipients.length})', style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  ...email.recipients.map((rec) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.check_circle, color: Colors.green, size: 16),
-                        const SizedBox(width: 8),
-                        Expanded(child: Text(rec, style: Theme.of(context).textTheme.bodyLarge)),
-                      ],
-                    ),
-                  )),
-                ],
-              ),
-            ),
-          ),
-        ).animate().scale(duration: 300.ms, curve: Curves.easeOutBack).fade(duration: 300.ms);
-      },
-    );
-  }
-
-  Widget _buildDetailRow(IconData icon, String label, String value, {bool isValid = false, bool isAuth = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: Colors.grey, size: 20),
-          const SizedBox(width: 12),
-          SizedBox(width: 70, child: Text(label, style: const TextStyle(color: Colors.grey))),
-          Expanded(child: Text(value, style: Theme.of(context).textTheme.bodyLarge)),
-          if (isValid)
-            Icon(isAuth ? Icons.security : Icons.check_circle, color: Colors.green, size: 18),
-        ],
-      ),
+      builder: (context) => _DetailsDialog(email: email, primaryColor: AppTheme.primaryBlue),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset('assets/Logo.png', width: 32, height: 32).animate().fade(duration: 600.ms),
-            const SizedBox(width: 12),
-            Text('MailFlow', style: Theme.of(context).appBarTheme.titleTextStyle),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.contacts),
-            tooltip: 'View Saved Contacts',
-            onPressed: _showAllContacts,
-          )
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _history.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.history_rounded, size: 64, color: Colors.grey).animate().fade().scale(),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No emails scheduled yet.',
-                        style: Theme.of(context).textTheme.bodyLarge,
-                      ).animate().fade(delay: 200.ms),
+      backgroundColor: AppTheme.bgWhite,
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          // ── App Bar ───────────────────────────────────────────────────
+          SliverAppBar(
+            floating: true,
+            backgroundColor: AppTheme.bgWhite,
+            elevation: 0,
+            surfaceTintColor: Colors.transparent,
+            title: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.divider),
+                  ),
+                  child: Image.asset('assets/Logo.png'),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'MailFlow',
+                  style: TextStyle(
+                    fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.contacts_outlined, color: AppTheme.textMid),
+                tooltip: 'Saved Contacts',
+                onPressed: _showAllContacts,
+              ),
+              const SizedBox(width: 8),
+            ],
+            bottom: const PreferredSize(
+              preferredSize: Size.fromHeight(1),
+              child: Divider(height: 1, color: AppTheme.divider),
+            ),
+          ),
+
+          // ── Header hero card ──────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+              child: GestureDetector(
+                onTap: () => _openScheduleModal(),
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppTheme.primaryBlue, AppTheme.accentBlue],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryBlue.withOpacity(0.28),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
                     ],
                   ),
-                )
-              : ListView.builder(
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _history.length,
-                  itemBuilder: (context, index) {
-                    final item = _history[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(20),
-                        onTap: () => _showEmailDetails(item),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                                child: Icon(
-                                  item.type == 'PDF' ? Icons.picture_as_pdf : Icons.person,
-                                  color: Theme.of(context).primaryColor,
-                                ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(Icons.send_rounded, color: Colors.white, size: 26),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Schedule New Email',
+                              style: TextStyle(
+                                color: Colors.white, fontFamily: 'Outfit',
+                                fontSize: 18, fontWeight: FontWeight.w700,
                               ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(item.subject.isNotEmpty ? item.subject : '(No Subject)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                    const SizedBox(height: 4),
-                                    Text('From: \${item.senderEmail}', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12)),
-                                    Text('\${item.scheduledDate} at \${item.scheduledTime}', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12)),
-                                  ],
-                                ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Tap to set up sender, recipients,\nsubject, body & time',
+                              style: TextStyle(
+                                color: Colors.white70, fontFamily: 'Inter', fontSize: 12,
                               ),
-                              Column(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: item.status == 'Success' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      item.status,
-                                      style: TextStyle(
-                                        color: item.status == 'Success' ? Colors.green : Colors.orange,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                  ),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
-                                        onPressed: () => _openScheduleModal(existingEmail: item),
-                                        tooltip: 'Edit',
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete, size: 20, color: Colors.redAccent),
-                                        onPressed: () => _deleteEmail(item.id),
-                                        tooltip: 'Cancel Schedule',
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
-                    ).animate().fade(duration: 400.ms, delay: (index * 100).ms).slideX(begin: 0.1, end: 0);
-                  },
-                ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openScheduleModal(),
-        icon: const Icon(Icons.add),
-        label: const Text('Schedule Email'),
-        backgroundColor: Theme.of(context).primaryColor,
-        foregroundColor: Colors.white,
-      ).animate().scale(delay: 500.ms, duration: 400.ms, curve: Curves.easeOutBack),
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.18),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
+                      ),
+                    ],
+                  ),
+                ).animate().fade(duration: 500.ms).slideY(begin: 0.3, end: 0.0),
+              ),
+            ),
+          ),
+
+          // ── Stats row ─────────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Row(
+                children: [
+                  _StatChip(
+                    icon: Icons.schedule_rounded,
+                    label: 'Scheduled',
+                    value: '${_history.where((e) => e.status == 'In Process').length}',
+                    color: AppTheme.primaryBlue,
+                  ),
+                  const SizedBox(width: 12),
+                  _StatChip(
+                    icon: Icons.check_circle_rounded,
+                    label: 'Sent',
+                    value: '${_history.where((e) => e.status == 'Success').length}',
+                    color: AppTheme.successGreen,
+                  ),
+                  const SizedBox(width: 12),
+                  _StatChip(
+                    icon: Icons.all_inbox_rounded,
+                    label: 'Total',
+                    value: '${_history.length}',
+                    color: AppTheme.textMid,
+                  ),
+                ],
+              ).animate(delay: 200.ms).fade(duration: 400.ms),
+            ),
+          ),
+
+          // ── Section title ─────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+              child: Row(
+                children: [
+                  const Text(
+                    'Scheduled Emails',
+                    style: TextStyle(
+                      fontFamily: 'Outfit', fontSize: 17, fontWeight: FontWeight.w700,
+                      color: AppTheme.textDark,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${_history.length} total',
+                    style: const TextStyle(
+                      fontFamily: 'Inter', fontSize: 13, color: AppTheme.textLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Email list ────────────────────────────────────────────────
+          _isLoading
+              ? const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : _history.isEmpty
+                  ? SliverFillRemaining(
+                      child: _EmptyState(onTap: () => _openScheduleModal()),
+                    )
+                  : SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final item = _history[index];
+                            return _EmailCard(
+                              item: item,
+                              index: index,
+                              onTap: () => _showEmailDetails(item),
+                              onEdit: () => _openScheduleModal(existingEmail: item),
+                              onDelete: () => _deleteEmail(item.id),
+                            );
+                          },
+                          childCount: _history.length,
+                        ),
+                      ),
+                    ),
+        ],
+      ),
     );
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  HELPER WIDGETS
+// ─────────────────────────────────────────────────────────────────────────────
+class _StatChip extends StatelessWidget {
+  final IconData icon;
+  final String label, value;
+  final Color color;
+  const _StatChip({required this.icon, required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.07),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.15)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value, style: TextStyle(color: color, fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w700)),
+                Text(label, style: const TextStyle(color: AppTheme.textLight, fontFamily: 'Inter', fontSize: 11)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  final VoidCallback onTap;
+  const _EmptyState({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: AppTheme.primaryBlue.withOpacity(0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.mail_outline_rounded, size: 36, color: AppTheme.primaryBlue),
+          ).animate().fade().scale(),
+          const SizedBox(height: 20),
+          const Text(
+            'No emails scheduled yet',
+            style: TextStyle(fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w600, color: AppTheme.textDark),
+          ).animate(delay: 100.ms).fade(),
+          const SizedBox(height: 8),
+          const Text(
+            'Tap the card above to schedule\nyour first automated email',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textLight),
+          ).animate(delay: 200.ms).fade(),
+          const SizedBox(height: 28),
+          ElevatedButton.icon(
+            onPressed: onTap,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Schedule Email'),
+          ).animate(delay: 300.ms).fade().scale(),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmailCard extends StatelessWidget {
+  final ScheduledEmail item;
+  final int index;
+  final VoidCallback onTap, onEdit, onDelete;
+  const _EmailCard({required this.item, required this.index, required this.onTap, required this.onEdit, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isSuccess = item.status == 'Success';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppTheme.divider),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryBlue.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    item.type == 'PDF' ? Icons.picture_as_pdf_rounded : Icons.email_rounded,
+                    color: AppTheme.primaryBlue, size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.subject.isNotEmpty ? item.subject : '(No Subject)',
+                        style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textDark),
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${item.recipients.length} recipient${item.recipients.length == 1 ? '' : 's'}  •  ${item.scheduledDate}',
+                        style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textLight),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        item.scheduledTime,
+                        style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textMid),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isSuccess ? AppTheme.successGreen.withOpacity(0.10) : AppTheme.warningAmber.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        item.status,
+                        style: TextStyle(
+                          color: isSuccess ? AppTheme.successGreen : AppTheme.warningAmber,
+                          fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _ActionBtn(icon: Icons.edit_rounded, color: AppTheme.primaryBlue, onTap: onEdit),
+                        const SizedBox(width: 4),
+                        _ActionBtn(icon: Icons.delete_rounded, color: AppTheme.errorRed, onTap: onDelete),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ).animate().fade(duration: 350.ms, delay: (index * 60).ms).slideX(begin: 0.05, end: 0),
+    );
+  }
+}
+
+class _ActionBtn extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ActionBtn({required this.icon, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32, height: 32,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: color, size: 16),
+      ),
+    );
+  }
+}
+
+class _ContactsDialog extends StatelessWidget {
+  final List<String> contacts;
+  const _ContactsDialog({required this.contacts});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('Contacts', style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
+                const Spacer(),
+                IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
+              ],
+            ),
+            Text('${contacts.length} saved', style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textLight)),
+            const SizedBox(height: 16),
+            const Divider(color: AppTheme.divider),
+            Expanded(
+              child: contacts.isEmpty
+                  ? const Center(child: Text('No contacts yet.', style: TextStyle(color: AppTheme.textLight)))
+                  : ListView.separated(
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: contacts.length,
+                      separatorBuilder: (_, __) => const Divider(color: AppTheme.divider, height: 1),
+                      itemBuilder: (_, i) => ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppTheme.primaryBlue.withOpacity(0.08),
+                          child: Text(contacts[i][0].toUpperCase(), style: const TextStyle(color: AppTheme.primaryBlue, fontWeight: FontWeight.w700)),
+                        ),
+                        title: Text(contacts[i], style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark)),
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    ).animate().scale(duration: 250.ms, curve: Curves.easeOutBack).fade();
+  }
+}
+
+class _DetailsDialog extends StatelessWidget {
+  final ScheduledEmail email;
+  final Color primaryColor;
+  const _DetailsDialog({required this.email, required this.primaryColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const Text('Schedule Details', style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
+                  const Spacer(),
+                  IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _infoRow(Icons.account_circle_outlined, 'Sender', email.senderEmail),
+              _infoRow(Icons.calendar_today_rounded, 'Date', email.scheduledDate),
+              _infoRow(Icons.access_time_rounded, 'Time', email.scheduledTime),
+              _infoRow(Icons.subject_rounded, 'Subject', email.subject.isEmpty ? '(No Subject)' : email.subject),
+              const SizedBox(height: 8),
+              _sectionLabel('Body'),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: AppTheme.bgSurface, borderRadius: BorderRadius.circular(12)),
+                child: Text(email.body.isEmpty ? '(Empty body)' : email.body, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark)),
+              ),
+              const SizedBox(height: 16),
+              _sectionLabel('Recipients (${email.recipients.length})'),
+              ...email.recipients.map((r) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_rounded, color: AppTheme.successGreen, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(r, style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textDark))),
+                  ],
+                ),
+              )),
+            ],
+          ),
+        ),
+      ),
+    ).animate().scale(duration: 250.ms, curve: Curves.easeOutBack).fade();
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppTheme.textLight),
+          const SizedBox(width: 10),
+          SizedBox(width: 64, child: Text(label, style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textLight))),
+          Expanded(child: Text(value, style: const TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textDark))),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(text, style: const TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue)),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SCHEDULE MODAL
+// ─────────────────────────────────────────────────────────────────────────────
 class _ScheduleModal extends StatefulWidget {
   final ScheduledEmail? editEmail;
   const _ScheduleModal({this.editEmail});
@@ -308,64 +617,58 @@ class _ScheduleModal extends StatefulWidget {
 
 class _ScheduleModalState extends State<_ScheduleModal> {
   late String _sendType;
-  
-  final TextEditingController _senderController = TextEditingController();
+  final _senderController = TextEditingController();
   List<String> _suggestedSenders = [];
   bool _isAuthenticated = false;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
+  final _googleSignIn = GoogleSignIn(
     clientId: '787471915530-sg4ul6fm6s1paqabljmksi9c61cf4c77.apps.googleusercontent.com',
-    scopes: ['email', 'https://www.googleapis.com/auth/gmail.send']
+    scopes: ['email', 'https://www.googleapis.com/auth/gmail.send'],
   );
 
   List<TextEditingController> _emailControllers = [TextEditingController()];
   String? _pdfPath;
   List<String> _pdfEmails = [];
 
-  final TextEditingController _subjectController = TextEditingController();
-  final TextEditingController _bodyController = TextEditingController();
-  final TextEditingController _dateController = TextEditingController();
-  final TextEditingController _timeController = TextEditingController();
+  final _subjectController = TextEditingController();
+  final _bodyController = TextEditingController();
+  final _dateController = TextEditingController();
+  final _timeController = TextEditingController();
   bool _isAm = true;
 
   @override
   void initState() {
     super.initState();
-    _loadSuggestedSenders();
+    _loadSenders();
     if (widget.editEmail != null) {
-      final email = widget.editEmail!;
-      _sendType = email.type;
-      _senderController.text = email.senderEmail;
-      _isAuthenticated = true; // Assume true for editing
-      _subjectController.text = email.subject;
-      _bodyController.text = email.body;
-      _dateController.text = email.scheduledDate;
-      
-      String timeStr = email.scheduledTime;
-      _isAm = timeStr.contains('AM');
-      _timeController.text = timeStr.replaceAll(RegExp(r' AM| PM'), '');
-
+      final e = widget.editEmail!;
+      _sendType = e.type;
+      _senderController.text = e.senderEmail;
+      _isAuthenticated = true;
+      _subjectController.text = e.subject;
+      _bodyController.text = e.body;
+      _dateController.text = e.scheduledDate;
+      _isAm = e.scheduledTime.contains('AM');
+      _timeController.text = e.scheduledTime.replaceAll(RegExp(r' AM| PM'), '');
       if (_sendType == 'Single' || _sendType == 'Multiple') {
-        _emailControllers = email.recipients.map((r) => TextEditingController(text: r)).toList();
+        _emailControllers = e.recipients.map((r) => TextEditingController(text: r)).toList();
       } else if (_sendType == 'PDF') {
-        _pdfPath = 'Extracted (\${email.recipients.length} emails)';
-        _pdfEmails = email.recipients;
+        _pdfPath = 'Extracted (${e.recipients.length} emails)';
+        _pdfEmails = e.recipients;
       }
     } else {
       _sendType = 'Single';
     }
   }
 
-  Future<void> _loadSuggestedSenders() async {
-    final senders = await StorageService.getSenderEmails();
-    setState(() {
-      _suggestedSenders = senders;
-    });
+  Future<void> _loadSenders() async {
+    final s = await StorageService.getSenderEmails();
+    setState(() => _suggestedSenders = s);
   }
 
   @override
   void dispose() {
     _senderController.dispose();
-    for (var c in _emailControllers) { c.dispose(); }
+    for (var c in _emailControllers) c.dispose();
     _subjectController.dispose();
     _bodyController.dispose();
     _dateController.dispose();
@@ -375,176 +678,106 @@ class _ScheduleModalState extends State<_ScheduleModal> {
 
   Future<void> _authenticateWithGoogle(String currentEmail) async {
     if (!_isValidEmail(currentEmail)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a valid Sender Email first.')));
+      _snack('Please enter a valid Sender Email first.');
       return;
     }
     try {
       final account = await _googleSignIn.signIn();
       if (account != null) {
-        setState(() {
-          _isAuthenticated = true;
-          _senderController.text = account.email;
-        });
+        setState(() { _isAuthenticated = true; _senderController.text = account.email; });
         await StorageService.saveSenderEmail(account.email);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Authenticated Successfully!')));
+        _snack('Authenticated successfully!');
       }
-    } catch (error) {
-      setState(() {
-        _isAuthenticated = true;
-        _senderController.text = currentEmail;
-      });
+    } catch (_) {
+      setState(() { _isAuthenticated = true; _senderController.text = currentEmail; });
       await StorageService.saveSenderEmail(currentEmail);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Demo Auth Success! Sender saved to Autocomplete memory.')));
+      _snack('Sender saved!');
     }
   }
 
-  bool _isValidEmail(String email) {
-    final RegExp regex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
-    return regex.hasMatch(email.trim());
-  }
+  bool _isValidEmail(String e) =>
+      RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$').hasMatch(e.trim());
 
   Future<void> _pickPdf() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf'],
-      withData: true, // Crucial for Web Compatibility
+      withData: true,
     );
-
     if (result != null) {
       List<String> emails = [];
       if (result.files.single.bytes != null) {
-        // Read directly from bytes (Web or Desktop)
         emails = await PdfParser.extractEmailsFromPdfBytes(result.files.single.bytes!);
       } else if (result.files.single.path != null) {
-        // Fallback for desktop if bytes are somehow missing but path exists
-        final file = File(result.files.single.path!);
-        final bytes = await file.readAsBytes();
+        final bytes = await File(result.files.single.path!).readAsBytes();
         emails = await PdfParser.extractEmailsFromPdfBytes(bytes);
       }
-      
-      setState(() {
-        _pdfPath = result.files.single.name;
-        _pdfEmails = emails;
-      });
-      
-      if (emails.isNotEmpty) {
-        await StorageService.saveExtractedEmails(emails); // Save perfectly extracted emails permanently
-      }
+      setState(() { _pdfPath = result.files.single.name; _pdfEmails = emails; });
+      if (emails.isNotEmpty) await StorageService.saveExtractedEmails(emails);
     }
   }
 
-  void _reviewExtractedEmails() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: Theme.of(context).cardTheme.color,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            height: MediaQuery.of(context).size.height * 0.7,
-            child: Column(
-              children: [
-                Text('Extracted Emails (\${_pdfEmails.length})', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 20)),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: ListView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: _pdfEmails.length,
-                    itemBuilder: (context, index) {
-                      return ListTile(
-                        leading: const Icon(Icons.email, color: Colors.grey),
-                        title: Text(_pdfEmails[index], style: Theme.of(context).textTheme.bodyLarge),
-                        trailing: const Icon(Icons.check_circle, color: Colors.green, size: 16),
-                      );
-                    },
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Close'),
-                )
-              ],
-            ),
-          ),
-        ).animate().fade().scale();
-      },
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: const TextStyle(fontFamily: 'Inter', color: Colors.white)),
+        backgroundColor: AppTheme.textDark,
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height - 180, // Push to top of screen
+          left: 20,
+          right: 20,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 
-  bool _isDateTimeValid(String dateString, String timeString, bool isAm) {
-    if (dateString.length != 10 || timeString.length != 5) return false;
+  bool _isDateTimeValid(String d, String t, bool am) {
+    if (d.length != 10 || t.length != 5) return false;
     try {
-      int day = int.parse(dateString.substring(0, 2));
-      int month = int.parse(dateString.substring(3, 5));
-      int year = int.parse(dateString.substring(6, 10));
-      
-      int hour = int.parse(timeString.substring(0, 2));
-      int minute = int.parse(timeString.substring(3, 5));
-      
-      if (!isAm && hour != 12) hour += 12;
-      if (isAm && hour == 12) hour = 0;
-      
-      DateTime entered = DateTime(year, month, day, hour, minute);
-      DateTime now = DateTime.now();
-      
-      return entered.isAfter(now);
-    } catch (e) {
-      return false;
-    }
+      int day = int.parse(d.substring(0, 2));
+      int month = int.parse(d.substring(3, 5));
+      int year = int.parse(d.substring(6, 10));
+      int hour = int.parse(t.substring(0, 2));
+      int minute = int.parse(t.substring(3, 5));
+      if (!am && hour != 12) hour += 12;
+      if (am && hour == 12) hour = 0;
+      return DateTime(year, month, day, hour, minute).isAfter(DateTime.now());
+    } catch (_) { return false; }
   }
 
   Future<void> _submit() async {
-    final senderText = _senderController.text.trim();
-    if (!_isValidEmail(senderText) || !_isAuthenticated) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please authenticate a valid Sender Email.')));
-      return;
-    }
-    if (_dateController.text.length != 10 || _timeController.text.length != 5) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter valid Date and Time.')));
-      return;
-    }
-    if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot schedule in the past!')));
-      return;
-    }
+    final sender = _senderController.text.trim();
+    if (!_isValidEmail(sender) || !_isAuthenticated) { _snack('Authenticate a valid sender email first.'); return; }
+    if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _snack('Enter a valid future date and time.'); return; }
 
     List<String> recipients = [];
     if (_sendType == 'PDF') {
-      if (_pdfEmails.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No emails found in PDF or no PDF selected.')));
-        return;
-      }
+      if (_pdfEmails.isEmpty) { _snack('No emails extracted from PDF.'); return; }
       recipients = _pdfEmails;
     } else {
       for (var c in _emailControllers) {
-        final email = c.text.trim();
-        if (email.isNotEmpty) {
-          if (!_isValidEmail(email)) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Invalid recipient email: \$email')));
-            return;
-          }
-          recipients.add(email);
+        final e = c.text.trim();
+        if (e.isNotEmpty) {
+          if (!_isValidEmail(e)) { _snack('Invalid email: $e'); return; }
+          recipients.add(e);
         }
       }
-      if (recipients.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter at least one recipient.')));
-        return;
-      }
+      if (recipients.isEmpty) { _snack('Add at least one recipient.'); return; }
     }
-    
-    // Save these recipients to global contacts too!
     await StorageService.saveExtractedEmails(recipients);
 
     final newEmail = ScheduledEmail(
       id: widget.editEmail?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      senderEmail: senderText,
+      senderEmail: sender,
       type: _sendType,
       recipients: recipients,
       subject: _subjectController.text,
       body: _bodyController.text,
       scheduledDate: _dateController.text,
-      scheduledTime: '\${_timeController.text} \${_isAm ? "AM" : "PM"}',
+      scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
     );
 
     if (widget.editEmail != null) {
@@ -552,250 +785,317 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     } else {
       await StorageService.saveEmail(newEmail);
     }
-    
     if (mounted) Navigator.pop(context);
-  }
-  
-  Widget _buildCustomSegment(String type) {
-    final isSelected = _sendType == type;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _sendType = type),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? Theme.of(context).primaryColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? Theme.of(context).primaryColor : Colors.grey.withOpacity(0.3),
-            ),
-          ),
-          child: Center(
-            child: Text(
-              type,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: AnimatedSize(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(widget.editEmail != null ? 'Edit Schedule' : 'New Schedule', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 24)),
-              const SizedBox(height: 24),
-              
-              Autocomplete<String>(
-                optionsBuilder: (TextEditingValue textEditingValue) {
-                  if (textEditingValue.text == '') {
-                    return const Iterable<String>.empty();
-                  }
-                  return _suggestedSenders.where((String option) {
-                    return option.contains(textEditingValue.text.toLowerCase());
-                  });
-                },
-                onSelected: (String selection) {
-                  _senderController.text = selection;
-                },
-                fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
-                  // Keep our custom controller synced with Autocomplete's controller
-                  if (_senderController.text.isNotEmpty && textEditingController.text.isEmpty) {
-                    textEditingController.text = _senderController.text;
-                  }
-                  textEditingController.addListener(() {
-                    _senderController.text = textEditingController.text;
-                  });
-                  return TextField(
-                    controller: textEditingController,
-                    focusNode: focusNode,
-                    decoration: InputDecoration(
-                      hintText: 'Sender Email (e.g. you@gmail.com)',
-                      prefixIcon: const Icon(Icons.account_circle, color: Colors.grey),
-                      suffixIcon: _isAuthenticated ? const Icon(Icons.security, color: Colors.green) : null,
-                    ),
-                    enabled: !_isAuthenticated,
-                  );
-                },
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle bar
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: AppTheme.divider,
+                borderRadius: BorderRadius.circular(2),
               ),
+            ),
+          ),
 
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                child: !_isAuthenticated 
-                  ? Column(
-                      children: [
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () => _authenticateWithGoogle(_senderController.text),
-                            icon: const Icon(Icons.security),
-                            label: const Text('Authenticate with Google'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Theme.of(context).primaryColor,
-                              side: BorderSide(color: Theme.of(context).primaryColor),
+          // Scrollable content
+          Flexible(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title
+                  Row(
+                    children: [
+                      Text(
+                        widget.editEmail != null ? 'Edit Schedule' : 'New Schedule',
+                        style: const TextStyle(fontFamily: 'Outfit', fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 32, height: 32,
+                          decoration: BoxDecoration(color: AppTheme.bgSurface, borderRadius: BorderRadius.circular(8)),
+                          child: const Icon(Icons.close, size: 18, color: AppTheme.textMid),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // ── Section 1: Sender ──────────────────────────────
+                  _SectionHeader(title: '1  Sender Account', icon: Icons.account_circle_rounded),
+                  const SizedBox(height: 10),
+                  Autocomplete<String>(
+                    optionsBuilder: (v) => v.text.isEmpty
+                        ? const Iterable<String>.empty()
+                        : _suggestedSenders.where((s) => s.contains(v.text.toLowerCase())),
+                    onSelected: (s) => _senderController.text = s,
+                    fieldViewBuilder: (ctx, ctrl, focus, onSubmit) {
+                      if (_senderController.text.isNotEmpty && ctrl.text.isEmpty) ctrl.text = _senderController.text;
+                      ctrl.addListener(() => _senderController.text = ctrl.text);
+                      return TextField(
+                        controller: ctrl,
+                        focusNode: focus,
+                        enabled: !_isAuthenticated,
+                        decoration: InputDecoration(
+                          hintText: 'your@gmail.com',
+                          prefixIcon: const Icon(Icons.alternate_email, size: 18),
+                          suffixIcon: _isAuthenticated
+                              ? const Icon(Icons.verified_rounded, color: AppTheme.successGreen)
+                              : null,
+                        ),
+                      );
+                    },
+                  ),
+                  if (!_isAuthenticated) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _authenticateWithGoogle(_senderController.text),
+                        icon: const Icon(Icons.security_rounded, size: 18),
+                        label: const Text('Authenticate with Google'),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+
+                  // ── Section 2: Recipients ──────────────────────────
+                  _SectionHeader(title: '2  Recipients', icon: Icons.group_rounded),
+                  const SizedBox(height: 10),
+                  // Type selector
+                  Row(
+                    children: ['Single', 'Multiple', 'PDF'].map((type) {
+                      final sel = _sendType == type;
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _sendType = type),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            margin: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              color: sel ? AppTheme.primaryBlue : AppTheme.bgSurface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: sel ? AppTheme.primaryBlue : AppTheme.divider,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                type,
+                                style: TextStyle(
+                                  fontFamily: 'Inter', fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: sel ? Colors.white : AppTheme.textMid,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ],
-                    )
-                  : const SizedBox.shrink(),
-              ),
-              const SizedBox(height: 32),
-
-              Row(
-                children: [
-                  _buildCustomSegment('Single'),
-                  const SizedBox(width: 8),
-                  _buildCustomSegment('Multiple'),
-                  const SizedBox(width: 8),
-                  _buildCustomSegment('PDF'),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              if (_sendType == 'Single' || _sendType == 'Multiple')
-                ...List.generate(_emailControllers.length, (index) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: TextField(
-                      controller: _emailControllers[index],
-                      decoration: InputDecoration(
-                        hintText: 'Recipient Email',
-                        prefixIcon: const Icon(Icons.email_outlined, color: Colors.grey),
-                        suffixIcon: _sendType == 'Multiple' && _emailControllers.length > 1
-                            ? IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent), onPressed: () => setState(() => _emailControllers.removeAt(index)))
-                            : null,
-                      ),
-                    ).animate().fade().slideY(),
-                  );
-                }),
-                
-              if (_sendType == 'Multiple')
-                TextButton.icon(
-                  onPressed: () => setState(() => _emailControllers.add(TextEditingController())),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add More'),
-                ),
-
-              if (_sendType == 'PDF')
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).primaryColor, width: 2),
-                    borderRadius: BorderRadius.circular(16),
-                    color: Theme.of(context).cardTheme.color,
+                      );
+                    }).toList(),
                   ),
-                  child: Column(
+                  const SizedBox(height: 14),
+
+                  // Recipient inputs
+                  if (_sendType == 'Single' || _sendType == 'Multiple')
+                    ...List.generate(_emailControllers.length, (i) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: TextField(
+                        controller: _emailControllers[i],
+                        decoration: InputDecoration(
+                          hintText: 'Recipient ${i + 1} email',
+                          prefixIcon: const Icon(Icons.email_outlined, size: 18),
+                          suffixIcon: _sendType == 'Multiple' && _emailControllers.length > 1
+                              ? IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline, color: AppTheme.errorRed, size: 18),
+                                  onPressed: () => setState(() => _emailControllers.removeAt(i)),
+                                )
+                              : null,
+                        ),
+                      ).animate().fade().slideY(),
+                    )),
+
+                  if (_sendType == 'Multiple')
+                    TextButton.icon(
+                      onPressed: () => setState(() => _emailControllers.add(TextEditingController())),
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('Add Recipient'),
+                    ),
+
+                  if (_sendType == 'PDF')
+                    GestureDetector(
+                      onTap: _pickPdf,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: AppTheme.bgSurface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: _pdfPath != null ? AppTheme.primaryBlue : AppTheme.divider,
+                            width: _pdfPath != null ? 2 : 1,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              _pdfPath != null ? Icons.picture_as_pdf_rounded : Icons.upload_file_rounded,
+                              size: 40,
+                              color: _pdfPath != null ? AppTheme.primaryBlue : AppTheme.textLight,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _pdfPath ?? 'Tap to upload PDF',
+                              style: TextStyle(
+                                fontFamily: 'Inter', fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: _pdfPath != null ? AppTheme.textDark : AppTheme.textLight,
+                              ),
+                            ),
+                            if (_pdfEmails.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text('${_pdfEmails.length} emails extracted', style: const TextStyle(color: AppTheme.successGreen, fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600)),
+                            ],
+                          ],
+                        ),
+                      ).animate().fade().scale(),
+                    ),
+                  const SizedBox(height: 24),
+
+                  // ── Section 3: Email content ───────────────────────
+                  _SectionHeader(title: '3  Email Content', icon: Icons.edit_note_rounded),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _subjectController,
+                    decoration: const InputDecoration(
+                      hintText: 'Subject line',
+                      prefixIcon: Icon(Icons.subject_rounded, size: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _bodyController,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      hintText: 'Write your email body here…',
+                      alignLabelWithHint: true,
+                      contentPadding: EdgeInsets.all(16),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── Section 4: Schedule time ───────────────────────
+                  _SectionHeader(title: '4  Schedule Date & Time', icon: Icons.schedule_rounded),
+                  const SizedBox(height: 10),
+                  Row(
                     children: [
-                      Icon(Icons.picture_as_pdf, size: 48, color: Theme.of(context).primaryColor),
-                      const SizedBox(height: 16),
-                      Text(_pdfPath ?? 'No PDF Selected', style: Theme.of(context).textTheme.bodyLarge),
-                      if (_pdfEmails.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text('\${_pdfEmails.length} emails extracted!', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        TextButton.icon(
-                          onPressed: _reviewExtractedEmails,
-                          icon: const Icon(Icons.visibility),
-                          label: const Text('Review Emails'),
-                        )
-                      ],
-                      const SizedBox(height: 16),
-                      ElevatedButton(onPressed: _pickPdf, child: const Text('Upload PDF')),
+                      Expanded(
+                        child: TextField(
+                          controller: _dateController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [DateInputFormatter()],
+                          decoration: const InputDecoration(
+                            hintText: 'DD/MM/YYYY',
+                            prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _timeController,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [TimeInputFormatter()],
+                                decoration: const InputDecoration(hintText: '12:00'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () => setState(() => _isAm = !_isAm),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 17),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryBlue.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.3)),
+                                ),
+                                child: Text(
+                                  _isAm ? 'AM' : 'PM',
+                                  style: const TextStyle(color: AppTheme.primaryBlue, fontFamily: 'Inter', fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-                ).animate().fade().scale(),
+                  const SizedBox(height: 28),
 
-              const SizedBox(height: 24),
-              TextField(
-                controller: _subjectController,
-                decoration: const InputDecoration(hintText: 'Subject', prefixIcon: Icon(Icons.subject, color: Colors.grey)),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _bodyController,
-                maxLines: 4,
-                decoration: const InputDecoration(hintText: 'Email Body Content', alignLabelWithHint: true),
-              ),
-              const SizedBox(height: 24),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _dateController,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [DateInputFormatter()],
-                      decoration: const InputDecoration(hintText: 'DD/MM/YYYY', prefixIcon: Icon(Icons.calendar_today, color: Colors.grey)),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _timeController,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [TimeInputFormatter()],
-                            decoration: const InputDecoration(hintText: '12:00'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        InkWell(
-                          onTap: () => setState(() => _isAm = !_isAm),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-                            decoration: BoxDecoration(color: Theme.of(context).primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(16)),
-                            child: Text(_isAm ? 'AM' : 'PM', style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                      ],
+                  // Submit
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: ElevatedButton(
+                      onPressed: _submit,
+                      child: Text(
+                        widget.editEmail != null ? 'Update Schedule' : 'Save & Schedule',
+                        style: const TextStyle(fontFamily: 'Outfit', fontSize: 17, fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 32),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _submit,
-                  child: Text(widget.editEmail != null ? 'Update Schedule' : 'Save Schedule', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  const _SectionHeader({required this.title, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: AppTheme.primaryBlue),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700,
+            color: AppTheme.primaryBlue,
           ),
         ),
-      ),
+      ],
     );
   }
 }
