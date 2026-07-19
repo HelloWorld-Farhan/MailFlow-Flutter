@@ -633,7 +633,7 @@ class _DetailsDialog extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: AppTheme.textLight),
           const SizedBox(width: 16),
-          SizedBox(width: 60, child: Text(label, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textLight))),
+          SizedBox(width: 72, child: Text(label, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textLight))),
           const SizedBox(width: 8),
           Expanded(child: Text(value, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textDark, height: 1.4))),
         ],
@@ -979,12 +979,16 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                           color: Colors.transparent,
                           child: Container(
                             width: MediaQuery.of(context).size.width - 40,
-                            margin: const EdgeInsets.only(top: 8),
+                            margin: const EdgeInsets.only(top: 0),
                             decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4))],
-                              border: Border.all(color: AppTheme.divider),
+                              color: const Color(0xFFE8E8E8),
+                              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 4, offset: const Offset(0, 4))],
+                              border: const Border(
+                                left: BorderSide(color: AppTheme.primaryBlue, width: 1.5),
+                                right: BorderSide(color: AppTheme.primaryBlue, width: 1.5),
+                                bottom: BorderSide(color: AppTheme.primaryBlue, width: 1.5),
+                              ),
                             ),
                             child: ListView.builder(
                               padding: EdgeInsets.zero,
@@ -996,7 +1000,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                                   onTap: () => onSelected(option),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                    child: Text(option, style: const TextStyle(fontFamily: 'Inter', color: AppTheme.textDark, fontSize: 14)),
+                                    child: Text(option, style: const TextStyle(fontFamily: 'Inter', color: AppTheme.textMid, fontSize: 14)),
                                   ),
                                 );
                               },
