@@ -1,6 +1,10 @@
 # 📬 MailFlow - The Smart Automated Email Scheduler
 
 <p align="center">
+  <img src="assets/Logo.png" width="120" alt="MailFlow Logo" />
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white"/>
   <img src="https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&logo=dart&logoColor=white"/>
   <img src="https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white"/>

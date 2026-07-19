@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  static const Color primaryColor = Color(0xFF6200EA); // Vibrant purple
-  static const Color secondaryColor = Color(0xFF03DAC6); // Neon teal
-  static const Color backgroundColor = Color(0xFF121212); // Deep black
-  static const Color surfaceColor = Color(0xFF1E1E1E); // Dark grey
+  static const Color primaryColor = Color(0xFF9D4EDD); // Amethyst Purple
+  static const Color backgroundColor = Color(0xFF000000); // OLED Black
+  static const Color surfaceColor = Color(0xFF121212); // Dark Grey Surface
 
   static ThemeData get darkTheme {
     return ThemeData(
@@ -32,11 +31,16 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryColor,
-          foregroundColor: Colors.white,
+          foregroundColor: backgroundColor,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: primaryColor,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -63,6 +67,10 @@ class AppTheme {
           borderRadius: BorderRadius.circular(16),
         ),
         elevation: 4,
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: primaryColor,
+        foregroundColor: backgroundColor,
       ),
     );
   }
