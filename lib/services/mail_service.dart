@@ -24,7 +24,7 @@ class MailService {
       final String base64Email = base64UrlEncode(utf8.encode(rawEmail.toString()));
 
       // Gmail API Endpoint
-      final Uri url = Uri.parse('https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send');
+      final Uri url = Uri.parse('https://gmail.googleapis.com/gmail/v1/users/me/messages/send');
 
       // Make the POST request
       final response = await http.post(
