@@ -13,9 +13,9 @@ class MailService {
       
       // Constructing RFC 2822 email format
       final StringBuffer rawEmail = StringBuffer();
-      rawEmail.writeln('From: \${emailConfig.senderEmail}');
-      rawEmail.writeln('To: \$toHeader');
-      rawEmail.writeln('Subject: \${emailConfig.subject}');
+      rawEmail.writeln('From: ${emailConfig.senderEmail}');
+      rawEmail.writeln('To: $toHeader');
+      rawEmail.writeln('Subject: ${emailConfig.subject}');
       rawEmail.writeln('Content-Type: text/plain; charset="UTF-8"');
       rawEmail.writeln(''); // Empty line separates headers from body
       rawEmail.writeln(emailConfig.body);
@@ -30,7 +30,7 @@ class MailService {
       final response = await http.post(
         url,
         headers: {
-          'Authorization': 'Bearer \$accessToken',
+          'Authorization': 'Bearer $accessToken',
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
@@ -42,12 +42,12 @@ class MailService {
         print('Email sent successfully!');
         return true;
       } else {
-        print('Failed to send email. Status code: \${response.statusCode}');
-        print('Response body: \${response.body}');
+        print('Failed to send email. Status code: ${response.statusCode}');
+        print('Response body: ${response.body}');
         return false;
       }
     } catch (e) {
-      print('Error sending email: \$e');
+      print('Error sending email: $e');
       return false;
     }
   }

@@ -51,6 +51,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ).then((_) => _loadHistory());
   }
 
+  void _openResendModal(ScheduledEmail email) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _ResendModal(email: email),
+    ).then((_) => _loadHistory());
+  }
+
   Future<void> _deleteEmail(String id) async {
     await StorageService.deleteEmail(id);
     _loadHistory();
@@ -274,6 +283,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               index: index,
                               onTap: () => _showEmailDetails(item),
                               onEdit: () => _openScheduleModal(existingEmail: item),
+                              onResend: () => _openResendModal(item),
                               onDelete: () => _deleteEmail(item.id),
                             );
                           },
@@ -369,8 +379,8 @@ class _EmptyState extends StatelessWidget {
 class _EmailCard extends StatelessWidget {
   final ScheduledEmail item;
   final int index;
-  final VoidCallback onTap, onEdit, onDelete;
-  const _EmailCard({required this.item, required this.index, required this.onTap, required this.onEdit, required this.onDelete});
+  final VoidCallback onTap, onEdit, onResend, onDelete;
+  const _EmailCard({required this.item, required this.index, required this.onTap, required this.onEdit, required this.onResend, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -460,8 +470,21 @@ class _EmailCard extends StatelessWidget {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        _ActionBtn(icon: Icons.edit_rounded, color: AppTheme.primaryBlue, onTap: onEdit),
-                        const SizedBox(width: 4),
+                        if (isSuccess && item.type == 'PDF')
+                          Container(
+                            margin: const EdgeInsets.only(right: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: AppTheme.successGreen.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                            child: Text('${item.recipients.length}/${item.recipients.length} Sent', style: const TextStyle(color: AppTheme.successGreen, fontSize: 10, fontWeight: FontWeight.bold)),
+                          ),
+                        if (!(isSuccess && item.type == 'PDF'))
+                          _ActionBtn(
+                            icon: isSuccess ? Icons.replay_circle_filled_rounded : Icons.edit_rounded, 
+                            color: AppTheme.primaryBlue, 
+                            onTap: isSuccess ? onResend : onEdit
+                          ),
+                        if (!(isSuccess && item.type == 'PDF'))
+                          const SizedBox(width: 4),
                         _ActionBtn(icon: Icons.delete_rounded, color: AppTheme.errorRed, onTap: onDelete),
                       ],
                     ),
@@ -666,6 +689,9 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   String? _senderMsg; bool _isSenderErr = false;
   String? _recipientMsg; bool _isRecipientErr = false;
   String? _dateMsg; bool _isDateErr = false;
+  String? _scheduleNameMsg; bool _isScheduleNameErr = false;
+  String? _subjectMsg; bool _isSubjectErr = false;
+  String? _bodyMsg; bool _isBodyErr = false;
 
   @override
   void initState() {
@@ -766,6 +792,9 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       if (field == 'sender') { _senderMsg = msg; _isSenderErr = isError; }
       else if (field == 'recipient') { _recipientMsg = msg; _isRecipientErr = isError; }
       else if (field == 'date') { _dateMsg = msg; _isDateErr = isError; }
+      else if (field == 'scheduleName') { _scheduleNameMsg = msg; _isScheduleNameErr = isError; }
+      else if (field == 'subject') { _subjectMsg = msg; _isSubjectErr = isError; }
+      else if (field == 'body') { _bodyMsg = msg; _isBodyErr = isError; }
     });
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
@@ -773,6 +802,9 @@ class _ScheduleModalState extends State<_ScheduleModal> {
           if (field == 'sender' && _senderMsg == msg) _senderMsg = null;
           else if (field == 'recipient' && _recipientMsg == msg) _recipientMsg = null;
           else if (field == 'date' && _dateMsg == msg) _dateMsg = null;
+          else if (field == 'scheduleName' && _scheduleNameMsg == msg) _scheduleNameMsg = null;
+          else if (field == 'subject' && _subjectMsg == msg) _subjectMsg = null;
+          else if (field == 'body' && _bodyMsg == msg) _bodyMsg = null;
         });
       }
     });
@@ -832,6 +864,18 @@ class _ScheduleModalState extends State<_ScheduleModal> {
         }
       }
       if (recipients.isEmpty) { _showMsg('recipient', 'Add at least one recipient.'); return; }
+    }
+    
+    if (_sendType == 'Multiple' || _sendType == 'PDF') {
+      if (_scheduleNameController.text.trim().isEmpty) { _showMsg('scheduleName', 'Please provide a schedule name.'); return; }
+    }
+    
+    if (!_useSavedFormat) {
+      if (_subjectController.text.trim().isEmpty) { _showMsg('subject', 'Subject cannot be empty.'); return; }
+      if (_bodyController.text.trim().isEmpty) { _showMsg('body', 'Body cannot be empty.'); return; }
+    } else {
+      if (_selectedSubject == null) { _showMsg('subject', 'Please select a saved subject.'); return; }
+      if (_selectedBody == null) { _showMsg('body', 'Please select a saved body.'); return; }
     }
     await StorageService.saveExtractedEmails(recipients);
 
@@ -906,14 +950,62 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   ),
                   const SizedBox(height: 20),
 
-                  // ── Section 1: Sender ──────────────────────────────
-                  _SectionHeader(title: '1  Sender Account', icon: Icons.account_circle_rounded),
+                  // ── Section 1: Name ──────────────────────────────
+                  if (_sendType == 'Multiple' || _sendType == 'PDF') ...[
+                    _SectionHeader(title: '1  Schedule Name', icon: Icons.label_outline),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _scheduleNameController,
+                      decoration: const InputDecoration(
+                        hintText: 'My Weekly Update Blast',
+                        prefixIcon: Icon(Icons.label_outline, size: 18),
+                      ),
+                    ).animate().fade().slideY(),
+                    _buildFieldMsg(_scheduleNameMsg, _isScheduleNameErr),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // ── Section 2: Sender ──────────────────────────────
+                  _SectionHeader(title: (_sendType == 'Multiple' || _sendType == 'PDF') ? '2  Sender Account' : '1  Sender Account', icon: Icons.account_circle_rounded),
                   const SizedBox(height: 10),
                   Autocomplete<String>(
                     optionsBuilder: (v) => v.text.isEmpty
                         ? const Iterable<String>.empty()
                         : _suggestedSenders.where((s) => s.contains(v.text.toLowerCase())),
                     onSelected: (s) => _senderController.text = s,
+                    optionsViewBuilder: (BuildContext context, AutocompleteOnSelected<String> onSelected, Iterable<String> options) {
+                      return Align(
+                        alignment: Alignment.topLeft,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Container(
+                            width: MediaQuery.of(context).size.width - 40,
+                            margin: const EdgeInsets.only(top: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4))],
+                              border: Border.all(color: AppTheme.divider),
+                            ),
+                            child: ListView.builder(
+                              padding: EdgeInsets.zero,
+                              shrinkWrap: true,
+                              itemCount: options.length,
+                              itemBuilder: (BuildContext context, int index) {
+                                final String option = options.elementAt(index);
+                                return InkWell(
+                                  onTap: () => onSelected(option),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                    child: Text(option, style: const TextStyle(fontFamily: 'Inter', color: AppTheme.textDark, fontSize: 14)),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                     fieldViewBuilder: (ctx, ctrl, focus, onSubmit) {
                       if (_senderController.text.isNotEmpty && ctrl.text.isEmpty) ctrl.text = _senderController.text;
                       ctrl.addListener(() => _senderController.text = ctrl.text);
@@ -945,8 +1037,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   _buildFieldMsg(_senderMsg, _isSenderErr),
                   const SizedBox(height: 24),
 
-                  // ── Section 2: Recipients ──────────────────────────
-                  _SectionHeader(title: '2  Recipients', icon: Icons.group_rounded),
+                  // ── Section 3: Recipients ──────────────────────────
+                  _SectionHeader(title: (_sendType == 'Multiple' || _sendType == 'PDF') ? '3  Recipients' : '2  Recipients', icon: Icons.group_rounded),
                   const SizedBox(height: 10),
                   // Type selector
                   Row(
@@ -984,16 +1076,6 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   const SizedBox(height: 14),
 
                   // Recipient inputs
-                  if (_sendType == 'Multiple' || _sendType == 'PDF') ...[
-                    TextField(
-                      controller: _scheduleNameController,
-                      decoration: const InputDecoration(
-                        hintText: 'Schedule / Group Name',
-                        prefixIcon: Icon(Icons.label_outline, size: 18),
-                      ),
-                    ).animate().fade().slideY(),
-                    const SizedBox(height: 14),
-                  ],
 
                   if (_sendType == 'Single' || _sendType == 'Multiple')
                     ...List.generate(_emailControllers.length, (i) => Padding(
@@ -1061,8 +1143,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   _buildFieldMsg(_recipientMsg, _isRecipientErr),
                   const SizedBox(height: 24),
 
-                  // ── Section 3: Email content ───────────────────────
-                  _SectionHeader(title: '3  Email Content', icon: Icons.edit_note_rounded),
+                  // ── Section 4: Email content ───────────────────────
+                  _SectionHeader(title: (_sendType == 'Multiple' || _sendType == 'PDF') ? '4  Email Content' : '3  Email Content', icon: Icons.edit_note_rounded),
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -1103,40 +1185,77 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   if (!_useSavedFormat) ...[
                     TextField(
                       controller: _subjectController,
+                      minLines: 2,
+                      maxLines: 4,
                       decoration: const InputDecoration(
                         hintText: 'Subject line',
                         prefixIcon: Icon(Icons.subject_rounded, size: 18),
                       ),
                     ),
+                    _buildFieldMsg(_subjectMsg, _isSubjectErr),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _bodyController,
-                      maxLines: 4,
+                      minLines: 4,
+                      maxLines: 12,
                       decoration: const InputDecoration(
                         hintText: 'Write your email body here…',
                         alignLabelWithHint: true,
                         contentPadding: EdgeInsets.all(16),
                       ),
                     ),
+                    _buildFieldMsg(_bodyMsg, _isBodyErr),
                   ] else ...[
-                    DropdownButtonFormField<TemplateItem>(
-                      decoration: const InputDecoration(labelText: 'Select Subject', prefixIcon: Icon(Icons.subject_rounded, size: 18)),
-                      value: _selectedSubject,
-                      items: _savedSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s.name))).toList(),
-                      onChanged: (v) => setState(() => _selectedSubject = v),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppTheme.bgSurface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.divider),
+                      ),
+                      child: DropdownButtonFormField<TemplateItem>(
+                        decoration: const InputDecoration(
+                          labelText: 'Select Subject',
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          prefixIcon: Icon(Icons.subject_rounded, size: 18)
+                        ),
+                        dropdownColor: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        value: _selectedSubject,
+                        items: _savedSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14)))).toList(),
+                        onChanged: (v) => setState(() => _selectedSubject = v),
+                      ),
                     ),
+                    _buildFieldMsg(_subjectMsg, _isSubjectErr),
                     const SizedBox(height: 10),
-                    DropdownButtonFormField<TemplateItem>(
-                      decoration: const InputDecoration(labelText: 'Select Body', prefixIcon: Icon(Icons.edit_note_rounded, size: 18)),
-                      value: _selectedBody,
-                      items: _savedBodies.map((b) => DropdownMenuItem(value: b, child: Text(b.name))).toList(),
-                      onChanged: (v) => setState(() => _selectedBody = v),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppTheme.bgSurface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.divider),
+                      ),
+                      child: DropdownButtonFormField<TemplateItem>(
+                        decoration: const InputDecoration(
+                          labelText: 'Select Body',
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          prefixIcon: Icon(Icons.edit_note_rounded, size: 18)
+                        ),
+                        dropdownColor: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        value: _selectedBody,
+                        items: _savedBodies.map((b) => DropdownMenuItem(value: b, child: Text(b.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14)))).toList(),
+                        onChanged: (v) => setState(() => _selectedBody = v),
+                      ),
                     ),
+                    _buildFieldMsg(_bodyMsg, _isBodyErr),
                   ],
                   const SizedBox(height: 24),
 
-                  // ── Section 4: Schedule time ───────────────────────
-                  _SectionHeader(title: '4  Schedule Date & Time', icon: Icons.schedule_rounded),
+                  // ── Section 5: Schedule time ───────────────────────
+                  _SectionHeader(title: (_sendType == 'Multiple' || _sendType == 'PDF') ? '5  Schedule Date & Time' : '4  Schedule Date & Time', icon: Icons.schedule_rounded),
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -1229,6 +1348,228 @@ class _SectionHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  RESEND MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+class _ResendModal extends StatefulWidget {
+  final ScheduledEmail email;
+  const _ResendModal({required this.email});
+
+  @override
+  State<_ResendModal> createState() => _ResendModalState();
+}
+
+class _ResendModalState extends State<_ResendModal> {
+  final _dateController = TextEditingController();
+  final _timeController = TextEditingController();
+  bool _isAm = true;
+  String? _dateMsg; bool _isDateErr = false;
+
+  @override
+  void dispose() {
+    _dateController.dispose();
+    _timeController.dispose();
+    super.dispose();
+  }
+
+  bool _isDateTimeValid(String d, String t, bool am) {
+    if (d.length != 10 || t.length != 5) return false;
+    try {
+      int day = int.parse(d.substring(0, 2));
+      int month = int.parse(d.substring(3, 5));
+      int year = int.parse(d.substring(6, 10));
+      int hour = int.parse(t.substring(0, 2));
+      int minute = int.parse(t.substring(3, 5));
+      if (!am && hour != 12) hour += 12;
+      if (am && hour == 12) hour = 0;
+      return DateTime(year, month, day, hour, minute).isAfter(DateTime.now());
+    } catch (_) { return false; }
+  }
+
+  void _showMsg(String msg, {bool isError = true}) {
+    if (!mounted) return;
+    setState(() {
+      _dateMsg = msg; _isDateErr = isError;
+    });
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) setState(() { _dateMsg = null; });
+    });
+  }
+
+  Widget _buildFieldMsg() {
+    if (_dateMsg == null) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: _isDateErr ? AppTheme.errorRed.withOpacity(0.1) : AppTheme.successGreen.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _isDateErr ? AppTheme.errorRed.withOpacity(0.3) : AppTheme.successGreen.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(_isDateErr ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+              color: _isDateErr ? AppTheme.errorRed : AppTheme.successGreen, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(_dateMsg!, style: TextStyle(color: _isDateErr ? AppTheme.errorRed : AppTheme.successGreen, fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 13))),
+        ],
+      ),
+    ).animate().fade().slideY(begin: -0.2, end: 0);
+  }
+
+  Future<void> _submit() async {
+    if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _showMsg('Enter a valid future date and time.'); return; }
+    
+    final newEmail = widget.email.copyWith(
+      id: DateTime.now().millisecondsSinceEpoch.toString(), // New ID for resend
+      status: 'Pending',
+      scheduledDate: _dateController.text,
+      scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
+    );
+    
+    await StorageService.saveEmail(newEmail);
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      child: Column(
+        children: [
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 48, height: 6,
+              decoration: BoxDecoration(
+                color: AppTheme.textLight.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Resend Email',
+                        style: TextStyle(fontFamily: 'Outfit', fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 32, height: 32,
+                          decoration: BoxDecoration(color: AppTheme.bgSurface, borderRadius: BorderRadius.circular(8)),
+                          child: const Icon(Icons.close, size: 18, color: AppTheme.textMid),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Text('Schedule Date & Time', style: TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue)),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _dateController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [DateInputFormatter()],
+                          decoration: const InputDecoration(
+                            hintText: 'DD/MM/YYYY',
+                            prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: _timeController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [TimeInputFormatter()],
+                          decoration: const InputDecoration(
+                            hintText: 'HH:MM',
+                            prefixIcon: Icon(Icons.access_time_rounded, size: 18),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _isAm = true),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              color: _isAm ? AppTheme.primaryBlue : AppTheme.bgSurface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: _isAm ? AppTheme.primaryBlue : AppTheme.divider),
+                            ),
+                            child: Center(child: Text('AM', style: TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: _isAm ? Colors.white : AppTheme.textMid))),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _isAm = false),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              color: !_isAm ? AppTheme.primaryBlue : AppTheme.bgSurface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: !_isAm ? AppTheme.primaryBlue : AppTheme.divider),
+                            ),
+                            child: Center(child: Text('PM', style: TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: !_isAm ? Colors.white : AppTheme.textMid))),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  _buildFieldMsg(),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: ElevatedButton(
+                      onPressed: _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryBlue,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: const Text('Resend Schedule', style: TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -42,57 +42,87 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  editItem == null ? 'New $type' : 'Edit $type',
-                  style: const TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Template Name'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: contentController,
-                  maxLines: type == 'Body' ? 4 : 1,
-                  decoration: InputDecoration(labelText: type == 'Subject' ? 'Subject Line' : 'Email Body'),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final name = nameController.text.trim();
-                      final content = contentController.text.trim();
-                      if (name.isEmpty || content.isEmpty) return;
-
-                      final template = TemplateItem(
-                        id: editItem?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-                        name: name,
-                        content: content,
-                        type: type,
-                      );
-
-                      if (editItem != null) {
-                        await StorageService.updateTemplate(template);
-                      } else {
-                        await StorageService.saveTemplate(template);
-                      }
-
-                      if (mounted) {
-                        Navigator.pop(context);
-                        _loadTemplates();
-                      }
-                    },
-                    child: Text('Save $type'),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    editItem == null ? 'New $type' : 'Edit $type',
+                    style: const TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      labelText: 'Template Name',
+                      labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid),
+                      floatingLabelBehavior: FloatingLabelBehavior.always,
+                      filled: true,
+                      fillColor: AppTheme.primaryBlue.withOpacity(0.04),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 2)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: contentController,
+                    minLines: type == 'Body' ? 6 : 1,
+                    maxLines: type == 'Body' ? 12 : 1,
+                    decoration: InputDecoration(
+                      labelText: type == 'Subject' ? 'Subject Line' : 'Email Body',
+                      labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid),
+                      floatingLabelBehavior: FloatingLabelBehavior.always,
+                      alignLabelWithHint: true,
+                      filled: true,
+                      fillColor: AppTheme.primaryBlue.withOpacity(0.04),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withOpacity(0.2))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 2)),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
+                      ),
+                      onPressed: () async {
+                        final name = nameController.text.trim();
+                        final content = contentController.text.trim();
+                        if (name.isEmpty || content.isEmpty) return;
+  
+                        final template = TemplateItem(
+                          id: editItem?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                          name: name,
+                          content: content,
+                          type: type,
+                        );
+  
+                        if (editItem != null) {
+                          await StorageService.updateTemplate(template);
+                        } else {
+                          await StorageService.saveTemplate(template);
+                        }
+  
+                        if (mounted) {
+                          Navigator.pop(context);
+                          _loadTemplates();
+                        }
+                      },
+                      child: Text('Save $type', style: const TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );

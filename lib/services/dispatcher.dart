@@ -52,6 +52,13 @@ class BackgroundDispatcher {
         print('Time arrived for email: ${email.id}. Attempting to send...');
         
         try {
+          if (email.type == 'Multiple' || email.type == 'PDF') {
+            if (email.status != 'In Process') {
+              final inProcessEmail = email.copyWith(status: 'In Process');
+              await StorageService.updateEmail(inProcessEmail);
+            }
+          }
+
           // Attempt to get token silently
           GoogleSignInAccount? account = _googleSignIn.currentUser;
           account ??= await _googleSignIn.signInSilently();
