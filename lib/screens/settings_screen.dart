@@ -69,8 +69,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                   const SizedBox(height: 16),
                   TextField(
                     controller: contentController,
-                    minLines: type == 'Body' ? 6 : 1,
-                    maxLines: type == 'Body' ? 12 : 1,
+                    minLines: type == 'Body' ? 8 : 4,
+                    maxLines: type == 'Body' ? 15 : 8,
                     decoration: InputDecoration(
                       labelText: type == 'Subject' ? 'Subject Line' : 'Email Body',
                       labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid),

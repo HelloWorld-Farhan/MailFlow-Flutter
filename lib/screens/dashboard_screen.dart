@@ -631,10 +631,11 @@ class _DetailsDialog extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: AppTheme.textLight),
-          const SizedBox(width: 10),
-          SizedBox(width: 64, child: Text(label, style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textLight))),
-          Expanded(child: Text(value, style: const TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textDark))),
+          Icon(icon, size: 20, color: AppTheme.textLight),
+          const SizedBox(width: 16),
+          SizedBox(width: 60, child: Text(label, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textLight))),
+          const SizedBox(width: 8),
+          Expanded(child: Text(value, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textDark, height: 1.4))),
         ],
       ),
     );
@@ -951,22 +952,20 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   const SizedBox(height: 20),
 
                   // ── Section 1: Name ──────────────────────────────
-                  if (_sendType == 'Multiple' || _sendType == 'PDF') ...[
-                    _SectionHeader(title: '1  Schedule Name', icon: Icons.label_outline),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _scheduleNameController,
-                      decoration: const InputDecoration(
-                        hintText: 'My Weekly Update Blast',
-                        prefixIcon: Icon(Icons.label_outline, size: 18),
-                      ),
-                    ).animate().fade().slideY(),
-                    _buildFieldMsg(_scheduleNameMsg, _isScheduleNameErr),
-                    const SizedBox(height: 24),
-                  ],
+                  _SectionHeader(title: '1  Schedule Name', icon: Icons.label_outline),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _scheduleNameController,
+                    decoration: const InputDecoration(
+                      hintText: 'My Weekly Update Blast',
+                      prefixIcon: Icon(Icons.label_outline, size: 18),
+                    ),
+                  ).animate().fade().slideY(),
+                  _buildFieldMsg(_scheduleNameMsg, _isScheduleNameErr),
+                  const SizedBox(height: 24),
 
                   // ── Section 2: Sender ──────────────────────────────
-                  _SectionHeader(title: (_sendType == 'Multiple' || _sendType == 'PDF') ? '2  Sender Account' : '1  Sender Account', icon: Icons.account_circle_rounded),
+                  _SectionHeader(title: '2  Sender Account', icon: Icons.account_circle_rounded),
                   const SizedBox(height: 10),
                   Autocomplete<String>(
                     optionsBuilder: (v) => v.text.isEmpty
@@ -1038,7 +1037,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   const SizedBox(height: 24),
 
                   // ── Section 3: Recipients ──────────────────────────
-                  _SectionHeader(title: (_sendType == 'Multiple' || _sendType == 'PDF') ? '3  Recipients' : '2  Recipients', icon: Icons.group_rounded),
+                  _SectionHeader(title: '3  Recipients', icon: Icons.group_rounded),
                   const SizedBox(height: 10),
                   // Type selector
                   Row(
@@ -1144,7 +1143,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   const SizedBox(height: 24),
 
                   // ── Section 4: Email content ───────────────────────
-                  _SectionHeader(title: (_sendType == 'Multiple' || _sendType == 'PDF') ? '4  Email Content' : '3  Email Content', icon: Icons.edit_note_rounded),
+                  _SectionHeader(title: '4  Email Content', icon: Icons.edit_note_rounded),
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -1185,8 +1184,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   if (!_useSavedFormat) ...[
                     TextField(
                       controller: _subjectController,
-                      minLines: 2,
-                      maxLines: 4,
+                      minLines: 4,
+                      maxLines: 8,
                       decoration: const InputDecoration(
                         hintText: 'Subject line',
                         prefixIcon: Icon(Icons.subject_rounded, size: 18),
@@ -1196,8 +1195,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     const SizedBox(height: 10),
                     TextField(
                       controller: _bodyController,
-                      minLines: 4,
-                      maxLines: 12,
+                      minLines: 8,
+                      maxLines: 15,
                       decoration: const InputDecoration(
                         hintText: 'Write your email body here…',
                         alignLabelWithHint: true,
@@ -1255,7 +1254,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   const SizedBox(height: 24),
 
                   // ── Section 5: Schedule time ───────────────────────
-                  _SectionHeader(title: (_sendType == 'Multiple' || _sendType == 'PDF') ? '5  Schedule Date & Time' : '4  Schedule Date & Time', icon: Icons.schedule_rounded),
+                  _SectionHeader(title: '5  Schedule Date & Time', icon: Icons.schedule_rounded),
                   const SizedBox(height: 10),
                   Row(
                     children: [
