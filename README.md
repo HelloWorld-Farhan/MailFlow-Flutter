@@ -20,14 +20,13 @@
 
 ## ✨ Features
 
-| Feature | Description |
-|---|---|
-| 🎨 **Perfect UI & Animations** | Modern dark design, smooth bottom sheets, and engaging custom interactions. |
-| 🧠 **Smart Input Formatting** | Intelligent date (DD/MM/YYYY) and 12-hour time parsing with strict past-date blocking. |
-| 📄 **PDF Email Extraction** | Upload a PDF and the app instantly extracts all valid email addresses using advanced Regex. |
-| 💾 **Persistent Local Storage** | Uses SharedPreferences to save your email history permanently on your device. |
-| 📧 **Automated Background Sending** | Schedules emails up to 40 per day, prioritizing manual emails over PDF imports. |
-| 🌙 **Deep Dark Mode** | A sleek, borderless dark UI that looks phenomenal. |
+- **Automated Background Sending:** Features a Smart Background Dispatcher that securely fires scheduled emails via the Google Cloud Gmail API exactly when they are due.
+- **Smart Date & Time Parsing:** Intuitive scheduling mechanism preventing past date selections.
+- **Advanced PDF Extraction:** Instantly extract thousands of emails directly from PDF documents (Fully Web & Desktop compatible).
+- **Permanent Global Contacts:** All extracted emails are permanently saved to a beautifully animated Global Contacts directory.
+- **Sender Auto-Complete:** Securely memorizes authenticated sender emails and provides elegant dropdown suggestions.
+- **Stunning Modern UI:** Built with a vibrant Sunset Orange and Clean White OLED aesthetic, featuring `flutter_animate` staggered lists and silky smooth bouncing scroll physics.
+- **Local Storage Engine:** Utilizing SharedPreferences to keep all scheduled data persistently saved on your device.
 
 ---
 
