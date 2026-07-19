@@ -634,6 +634,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
   bool _isAm = true;
+  String? _message;
+  bool _isError = false;
 
   @override
   void initState() {
@@ -686,12 +688,12 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       if (account != null) {
         setState(() { _isAuthenticated = true; _senderController.text = account.email; });
         await StorageService.saveSenderEmail(account.email);
-        _snack('Authenticated successfully!');
+        _snack('Authenticated successfully!', isError: false);
       }
     } catch (_) {
       setState(() { _isAuthenticated = true; _senderController.text = currentEmail; });
       await StorageService.saveSenderEmail(currentEmail);
-      _snack('Sender saved!');
+      _snack('Sender saved!', isError: false);
     }
   }
 
@@ -717,21 +719,17 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     }
   }
 
-  void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(fontFamily: 'Inter', color: Colors.white)),
-        backgroundColor: AppTheme.textDark,
-        behavior: SnackBarBehavior.floating,
-        margin: EdgeInsets.only(
-          bottom: MediaQuery.of(context).size.height - 180, // Push to top of screen
-          left: 20,
-          right: 20,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 3),
-      ),
-    );
+  void _snack(String msg, {bool isError = true}) {
+    if (!mounted) return;
+    setState(() {
+      _message = msg;
+      _isError = isError;
+    });
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted && _message == msg) {
+        setState(() => _message = null);
+      }
+    });
   }
 
   bool _isDateTimeValid(String d, String t, bool am) {
@@ -1054,6 +1052,40 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     ],
                   ),
                   const SizedBox(height: 28),
+
+                  // Inline Message
+                  if (_message != null)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _isError ? AppTheme.errorRed.withOpacity(0.1) : AppTheme.successGreen.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _isError ? AppTheme.errorRed.withOpacity(0.3) : AppTheme.successGreen.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _isError ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+                            color: _isError ? AppTheme.errorRed : AppTheme.successGreen,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _message!,
+                              style: TextStyle(
+                                color: _isError ? AppTheme.errorRed : AppTheme.successGreen,
+                                fontFamily: 'Inter',
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ).animate().fade().slideY(begin: 0.2, end: 0),
 
                   // Submit
                   SizedBox(
