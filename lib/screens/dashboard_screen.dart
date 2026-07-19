@@ -634,8 +634,9 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
   bool _isAm = true;
-  String? _message;
-  bool _isError = false;
+  String? _senderMsg; bool _isSenderErr = false;
+  String? _recipientMsg; bool _isRecipientErr = false;
+  String? _dateMsg; bool _isDateErr = false;
 
   @override
   void initState() {
@@ -680,7 +681,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
 
   Future<void> _authenticateWithGoogle(String currentEmail) async {
     if (!_isValidEmail(currentEmail)) {
-      _snack('Please enter a valid Sender Email first.');
+      _showMsg('sender', 'Please enter a valid Sender Email first.');
       return;
     }
     try {
@@ -688,12 +689,12 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       if (account != null) {
         setState(() { _isAuthenticated = true; _senderController.text = account.email; });
         await StorageService.saveSenderEmail(account.email);
-        _snack('Authenticated successfully!', isError: false);
+        _showMsg('sender', 'Authenticated successfully!', isError: false);
       }
     } catch (_) {
       setState(() { _isAuthenticated = true; _senderController.text = currentEmail; });
       await StorageService.saveSenderEmail(currentEmail);
-      _snack('Sender saved!', isError: false);
+      _showMsg('sender', 'Sender saved!', isError: false);
     }
   }
 
@@ -719,17 +720,44 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     }
   }
 
-  void _snack(String msg, {bool isError = true}) {
+  void _showMsg(String field, String msg, {bool isError = true}) {
     if (!mounted) return;
     setState(() {
-      _message = msg;
-      _isError = isError;
+      if (field == 'sender') { _senderMsg = msg; _isSenderErr = isError; }
+      else if (field == 'recipient') { _recipientMsg = msg; _isRecipientErr = isError; }
+      else if (field == 'date') { _dateMsg = msg; _isDateErr = isError; }
     });
     Future.delayed(const Duration(seconds: 3), () {
-      if (mounted && _message == msg) {
-        setState(() => _message = null);
+      if (mounted) {
+        setState(() {
+          if (field == 'sender' && _senderMsg == msg) _senderMsg = null;
+          else if (field == 'recipient' && _recipientMsg == msg) _recipientMsg = null;
+          else if (field == 'date' && _dateMsg == msg) _dateMsg = null;
+        });
       }
     });
+  }
+
+  Widget _buildFieldMsg(String? msg, bool isError) {
+    if (msg == null) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isError ? AppTheme.errorRed.withOpacity(0.1) : AppTheme.successGreen.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isError ? AppTheme.errorRed.withOpacity(0.3) : AppTheme.successGreen.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(isError ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+              color: isError ? AppTheme.errorRed : AppTheme.successGreen, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(msg, style: TextStyle(color: isError ? AppTheme.errorRed : AppTheme.successGreen, fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 13))),
+        ],
+      ),
+    ).animate().fade().slideY(begin: -0.2, end: 0);
   }
 
   bool _isDateTimeValid(String d, String t, bool am) {
@@ -748,22 +776,22 @@ class _ScheduleModalState extends State<_ScheduleModal> {
 
   Future<void> _submit() async {
     final sender = _senderController.text.trim();
-    if (!_isValidEmail(sender) || !_isAuthenticated) { _snack('Authenticate a valid sender email first.'); return; }
-    if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _snack('Enter a valid future date and time.'); return; }
+    if (!_isValidEmail(sender) || !_isAuthenticated) { _showMsg('sender', 'Authenticate a valid sender email first.'); return; }
+    if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _showMsg('date', 'Enter a valid future date and time.'); return; }
 
     List<String> recipients = [];
     if (_sendType == 'PDF') {
-      if (_pdfEmails.isEmpty) { _snack('No emails extracted from PDF.'); return; }
+      if (_pdfEmails.isEmpty) { _showMsg('recipient', 'No emails extracted from PDF.'); return; }
       recipients = _pdfEmails;
     } else {
       for (var c in _emailControllers) {
         final e = c.text.trim();
         if (e.isNotEmpty) {
-          if (!_isValidEmail(e)) { _snack('Invalid email: $e'); return; }
+          if (!_isValidEmail(e)) { _showMsg('recipient', 'Invalid email: $e'); return; }
           recipients.add(e);
         }
       }
-      if (recipients.isEmpty) { _snack('Add at least one recipient.'); return; }
+      if (recipients.isEmpty) { _showMsg('recipient', 'Add at least one recipient.'); return; }
     }
     await StorageService.saveExtractedEmails(recipients);
 
@@ -873,6 +901,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       ),
                     ),
                   ],
+                  _buildFieldMsg(_senderMsg, _isSenderErr),
                   const SizedBox(height: 24),
 
                   // ── Section 2: Recipients ──────────────────────────
@@ -977,6 +1006,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         ),
                       ).animate().fade().scale(),
                     ),
+                  _buildFieldMsg(_recipientMsg, _isRecipientErr),
                   const SizedBox(height: 24),
 
                   // ── Section 3: Email content ───────────────────────
@@ -1051,41 +1081,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       ),
                     ],
                   ),
+                  _buildFieldMsg(_dateMsg, _isDateErr),
                   const SizedBox(height: 28),
-
-                  // Inline Message
-                  if (_message != null)
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 16),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _isError ? AppTheme.errorRed.withOpacity(0.1) : AppTheme.successGreen.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _isError ? AppTheme.errorRed.withOpacity(0.3) : AppTheme.successGreen.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            _isError ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
-                            color: _isError ? AppTheme.errorRed : AppTheme.successGreen,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _message!,
-                              style: TextStyle(
-                                color: _isError ? AppTheme.errorRed : AppTheme.successGreen,
-                                fontFamily: 'Inter',
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ).animate().fade().slideY(begin: 0.2, end: 0),
 
                   // Submit
                   SizedBox(
