@@ -603,8 +603,31 @@ class _DetailsDialog extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Text('Schedule Details', style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
-                  const Spacer(),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (email.scheduleName != null && email.scheduleName!.isNotEmpty)
+                              ? email.scheduleName!
+                              : 'Schedule Details',
+                          style: const TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryBlue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            email.type,
+                            style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
                 ],
               ),
