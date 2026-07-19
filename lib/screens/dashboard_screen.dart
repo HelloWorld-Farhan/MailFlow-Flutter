@@ -1269,11 +1269,19 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       decoration: const InputDecoration(
                         hintText: 'Select Subject',
                         prefixIcon: Icon(Icons.subject_rounded, size: 18),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       ),
                       dropdownColor: Colors.white,
                       borderRadius: BorderRadius.circular(12),
+                      isExpanded: true,
                       value: _selectedSubject,
-                      items: _savedSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14)))).toList(),
+                      items: _savedSubjects.map((s) => DropdownMenuItem(
+                        value: s,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(s.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
+                        ),
+                      )).toList(),
                       onChanged: (v) => setState(() => _selectedSubject = v),
                     ),
                     _buildFieldMsg(_subjectMsg, _isSubjectErr),
@@ -1282,11 +1290,19 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       decoration: const InputDecoration(
                         hintText: 'Select Body',
                         prefixIcon: Icon(Icons.edit_note_rounded, size: 18),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       ),
                       dropdownColor: Colors.white,
                       borderRadius: BorderRadius.circular(12),
+                      isExpanded: true,
                       value: _selectedBody,
-                      items: _savedBodies.map((b) => DropdownMenuItem(value: b, child: Text(b.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14)))).toList(),
+                      items: _savedBodies.map((b) => DropdownMenuItem(
+                        value: b,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(b.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
+                        ),
+                      )).toList(),
                       onChanged: (v) => setState(() => _selectedBody = v),
                     ),
                     _buildFieldMsg(_bodyMsg, _isBodyErr),
