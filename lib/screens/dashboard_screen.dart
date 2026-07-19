@@ -584,13 +584,21 @@ class _ContactsDialog extends StatelessWidget {
   }
 }
 
-class _DetailsDialog extends StatelessWidget {
+class _DetailsDialog extends StatefulWidget {
   final ScheduledEmail email;
   final Color primaryColor;
   const _DetailsDialog({required this.email, required this.primaryColor});
 
   @override
+  State<_DetailsDialog> createState() => _DetailsDialogState();
+}
+
+class _DetailsDialogState extends State<_DetailsDialog> {
+  bool _showBody = false;
+
+  @override
   Widget build(BuildContext context) {
+    final email = widget.email;
     return Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -637,13 +645,43 @@ class _DetailsDialog extends StatelessWidget {
               _infoRow(Icons.access_time_rounded, 'Time', email.scheduledTime),
               _infoRow(Icons.subject_rounded, 'Subject', email.subject.isEmpty ? '(No Subject)' : email.subject),
               const SizedBox(height: 8),
-              _sectionLabel('Body'),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(color: AppTheme.bgSurface, borderRadius: BorderRadius.circular(12)),
-                child: Text(email.body.isEmpty ? '(Empty body)' : email.body, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark)),
+              // Collapsible Body Section
+              GestureDetector(
+                onTap: () => setState(() => _showBody = !_showBody),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.bgSurface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.divider),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.article_outlined, size: 18, color: AppTheme.primaryBlue),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Body',
+                          style: TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
+                        ),
+                      ),
+                      Icon(
+                        _showBody ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        color: AppTheme.textMid, size: 20,
+                      ),
+                    ],
+                  ),
+                ),
               ),
+              if (_showBody) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(color: AppTheme.bgSurface, borderRadius: BorderRadius.circular(12)),
+                  child: Text(email.body.isEmpty ? '(Empty body)' : email.body, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark)),
+                ),
+              ],
               const SizedBox(height: 16),
               _sectionLabel('Recipients (${email.recipients.length})'),
               ...email.recipients.map((r) {
@@ -704,6 +742,7 @@ class _DetailsDialog extends StatelessWidget {
     );
   }
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SCHEDULE MODAL
