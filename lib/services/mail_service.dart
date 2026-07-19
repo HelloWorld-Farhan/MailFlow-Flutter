@@ -15,8 +15,9 @@ class MailService {
       final StringBuffer rawEmail = StringBuffer();
       rawEmail.writeln('From: ${emailConfig.senderEmail}');
       rawEmail.writeln('To: $toHeader');
-      rawEmail.writeln('Subject: ${emailConfig.subject}');
-      rawEmail.writeln('Content-Type: text/plain; charset="UTF-8"');
+      final String encodedSubject = '=?utf-8?B?${base64Encode(utf8.encode(emailConfig.subject))}?=';
+      rawEmail.writeln('Subject: $encodedSubject');
+      rawEmail.writeln('Content-Type: text/html; charset="UTF-8"');
       rawEmail.writeln(''); // Empty line separates headers from body
       rawEmail.writeln(emailConfig.body);
 

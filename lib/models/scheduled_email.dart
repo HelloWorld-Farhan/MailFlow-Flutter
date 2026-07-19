@@ -21,7 +21,7 @@ class ScheduledEmail {
     required this.body,
     required this.scheduledDate,
     required this.scheduledTime,
-    this.status = 'In Process',
+    this.status = 'Scheduled',
     this.scheduleName,
   });
 
@@ -76,7 +76,7 @@ class ScheduledEmail {
       body: map['body'] ?? '',
       scheduledDate: map['scheduledDate'],
       scheduledTime: map['scheduledTime'],
-      status: map['status'] ?? 'In Process',
+      status: map['status'] ?? 'Scheduled',
       scheduleName: map['scheduleName'],
     );
   }

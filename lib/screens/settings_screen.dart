@@ -73,6 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                     maxLines: type == 'Body' ? 15 : 8,
                     decoration: InputDecoration(
                       labelText: type == 'Subject' ? 'Subject Line' : 'Email Body',
+                      hintText: type == 'Subject' ? 'Enter subject template...' : 'Enter HTML body template... (e.g. <b>Hello</b>)',
                       labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid),
                       floatingLabelBehavior: FloatingLabelBehavior.always,
                       alignLabelWithHint: true,
@@ -97,8 +98,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                       ),
                       onPressed: () async {
                         final name = nameController.text.trim();
-                        final content = contentController.text.trim();
-                        if (name.isEmpty || content.isEmpty) return;
+                        final content = contentController.text;
+                        if (name.isEmpty || content.trim().isEmpty) return;
   
                         final template = TemplateItem(
                           id: editItem?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -27,14 +28,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<ScheduledEmail> _history = [];
   bool _isLoading = true;
 
+  Timer? _refreshTimer;
+
   @override
   void initState() {
     super.initState();
     _loadHistory();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _loadHistory();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadHistory() async {
     final history = await StorageService.getEmails();
+    if (!mounted) return;
     setState(() {
       _history = history;
       _isLoading = false;
@@ -216,7 +229,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _StatChip(
                     icon: Icons.schedule_rounded,
                     label: 'Scheduled',
-                    value: '${_history.where((e) => e.status == 'In Process').length}',
+                    value: '${_history.where((e) => e.status == 'Scheduled' || e.status == 'In Process').length}',
                     color: AppTheme.primaryBlue,
                   ),
                   const SizedBox(width: 12),
@@ -419,7 +432,9 @@ class _EmailCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        item.subject.isNotEmpty ? item.subject : '(No Subject)',
+                        (item.scheduleName != null && item.scheduleName!.isNotEmpty) 
+                          ? item.scheduleName! 
+                          : (item.subject.isNotEmpty ? item.subject : '(No Subject)'),
                         style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textDark),
                         maxLines: 1, overflow: TextOverflow.ellipsis,
                       ),
@@ -608,16 +623,34 @@ class _DetailsDialog extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               _sectionLabel('Recipients (${email.recipients.length})'),
-              ...email.recipients.map((r) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  children: [
-                    const Icon(Icons.check_circle_rounded, color: AppTheme.successGreen, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(r, style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textDark))),
-                  ],
-                ),
-              )),
+              ...email.recipients.map((r) {
+                IconData statusIcon;
+                Color statusColor;
+                if (email.status == 'Success') {
+                  statusIcon = Icons.check_circle_rounded;
+                  statusColor = AppTheme.successGreen;
+                } else if (email.status == 'In Process') {
+                  statusIcon = Icons.sync_rounded;
+                  statusColor = AppTheme.primaryBlue;
+                } else if (email.status == 'Failed') {
+                  statusIcon = Icons.cancel_rounded;
+                  statusColor = AppTheme.errorRed;
+                } else {
+                  statusIcon = Icons.schedule_rounded;
+                  statusColor = AppTheme.warningAmber;
+                }
+                
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Icon(statusIcon, color: statusColor, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(r, style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textDark))),
+                    ],
+                  ),
+                );
+              }),
             ],
           ),
         ),
@@ -1202,56 +1235,36 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       minLines: 8,
                       maxLines: 15,
                       decoration: const InputDecoration(
-                        hintText: 'Write your email body here…',
+                        hintText: 'Write your HTML email body here… (e.g. <b>Hello</b>)',
                         alignLabelWithHint: true,
                         contentPadding: EdgeInsets.all(16),
                       ),
                     ),
                     _buildFieldMsg(_bodyMsg, _isBodyErr),
                   ] else ...[
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppTheme.bgSurface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppTheme.divider),
+                    DropdownButtonFormField<TemplateItem>(
+                      decoration: const InputDecoration(
+                        hintText: 'Select Subject',
+                        prefixIcon: Icon(Icons.subject_rounded, size: 18),
                       ),
-                      child: DropdownButtonFormField<TemplateItem>(
-                        decoration: const InputDecoration(
-                          labelText: 'Select Subject',
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          prefixIcon: Icon(Icons.subject_rounded, size: 18)
-                        ),
-                        dropdownColor: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        value: _selectedSubject,
-                        items: _savedSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14)))).toList(),
-                        onChanged: (v) => setState(() => _selectedSubject = v),
-                      ),
+                      dropdownColor: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      value: _selectedSubject,
+                      items: _savedSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14)))).toList(),
+                      onChanged: (v) => setState(() => _selectedSubject = v),
                     ),
                     _buildFieldMsg(_subjectMsg, _isSubjectErr),
                     const SizedBox(height: 10),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppTheme.bgSurface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppTheme.divider),
+                    DropdownButtonFormField<TemplateItem>(
+                      decoration: const InputDecoration(
+                        hintText: 'Select Body',
+                        prefixIcon: Icon(Icons.edit_note_rounded, size: 18),
                       ),
-                      child: DropdownButtonFormField<TemplateItem>(
-                        decoration: const InputDecoration(
-                          labelText: 'Select Body',
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          prefixIcon: Icon(Icons.edit_note_rounded, size: 18)
-                        ),
-                        dropdownColor: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        value: _selectedBody,
-                        items: _savedBodies.map((b) => DropdownMenuItem(value: b, child: Text(b.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14)))).toList(),
-                        onChanged: (v) => setState(() => _selectedBody = v),
-                      ),
+                      dropdownColor: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      value: _selectedBody,
+                      items: _savedBodies.map((b) => DropdownMenuItem(value: b, child: Text(b.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14)))).toList(),
+                      onChanged: (v) => setState(() => _selectedBody = v),
                     ),
                     _buildFieldMsg(_bodyMsg, _isBodyErr),
                   ],
