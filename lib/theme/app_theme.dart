@@ -22,7 +22,7 @@ class AppTheme {
         bodyLarge: GoogleFonts.inter(color: textColor),
         bodyMedium: GoogleFonts.inter(color: textColor.withOpacity(0.8)),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: surfaceColor,
         elevation: 8,
         shadowColor: Colors.black.withOpacity(0.05),

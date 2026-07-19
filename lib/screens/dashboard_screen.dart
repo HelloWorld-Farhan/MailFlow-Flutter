@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
@@ -311,7 +312,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   final TextEditingController _senderController = TextEditingController();
   List<String> _suggestedSenders = [];
   bool _isAuthenticated = false;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'https://www.googleapis.com/auth/gmail.send']);
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    clientId: '787471915530-sg4ul6fm6s1paqabljmksi9c61cf4c77.apps.googleusercontent.com',
+    scopes: ['email', 'https://www.googleapis.com/auth/gmail.send']
+  );
 
   List<TextEditingController> _emailControllers = [TextEditingController()];
   String? _pdfPath;

@@ -23,6 +23,30 @@ class ScheduledEmail {
     this.status = 'In Process',
   });
 
+  ScheduledEmail copyWith({
+    String? id,
+    String? senderEmail,
+    String? type,
+    List<String>? recipients,
+    String? subject,
+    String? body,
+    String? scheduledDate,
+    String? scheduledTime,
+    String? status,
+  }) {
+    return ScheduledEmail(
+      id: id ?? this.id,
+      senderEmail: senderEmail ?? this.senderEmail,
+      type: type ?? this.type,
+      recipients: recipients ?? this.recipients,
+      subject: subject ?? this.subject,
+      body: body ?? this.body,
+      scheduledDate: scheduledDate ?? this.scheduledDate,
+      scheduledTime: scheduledTime ?? this.scheduledTime,
+      status: status ?? this.status,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
