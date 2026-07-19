@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -51,6 +50,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadHistory();
   }
 
+  void _showAllContacts() async {
+    final contacts = await StorageService.getExtractedEmails();
+    if (!mounted) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Theme.of(context).cardTheme.color,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Global Contacts', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 22)),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                  ],
+                ),
+                Text('\${contacts.length} permanently saved emails', style: Theme.of(context).textTheme.bodyMedium),
+                const Divider(height: 32),
+                Expanded(
+                  child: contacts.isEmpty
+                      ? Center(child: Text('No contacts saved yet.', style: Theme.of(context).textTheme.bodyLarge))
+                      : ListView.builder(
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: contacts.length,
+                          itemBuilder: (context, index) {
+                            return ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                                child: Icon(Icons.person, color: Theme.of(context).primaryColor),
+                              ),
+                              title: Text(contacts[index], style: Theme.of(context).textTheme.bodyLarge),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ).animate().scale(duration: 300.ms, curve: Curves.easeOutBack).fade(duration: 300.ms);
+      },
+    );
+  }
+
   void _showEmailDetails(ScheduledEmail email) {
     showDialog(
       context: context,
@@ -61,6 +110,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Container(
             padding: const EdgeInsets.all(24),
             child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -68,11 +118,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Schedule Details', style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-                      IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(context)),
+                      Text('Schedule Details', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 22)),
+                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
                     ],
                   ),
-                  const Divider(color: Colors.white24, height: 32),
+                  const Divider(height: 32),
                   _buildDetailRow(Icons.account_circle, 'Sender', email.senderEmail, isValid: true, isAuth: true),
                   _buildDetailRow(Icons.calendar_today, 'Date', email.scheduledDate),
                   _buildDetailRow(Icons.access_time, 'Time', email.scheduledTime),
@@ -83,8 +133,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
-                    child: Text(email.body.isEmpty ? '(Empty Body)' : email.body, style: const TextStyle(color: Colors.white70)),
+                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.05), borderRadius: BorderRadius.circular(8)),
+                    child: Text(email.body.isEmpty ? '(Empty Body)' : email.body, style: Theme.of(context).textTheme.bodyLarge),
                   ),
                   const SizedBox(height: 16),
                   Text('Recipients (\${email.recipients.length})', style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
@@ -93,9 +143,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       children: [
-                        const Icon(Icons.check_circle, color: Colors.greenAccent, size: 16),
+                        const Icon(Icons.check_circle, color: Colors.green, size: 16),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(rec, style: const TextStyle(color: Colors.white70))),
+                        Expanded(child: Text(rec, style: Theme.of(context).textTheme.bodyLarge)),
                       ],
                     ),
                   )),
@@ -114,12 +164,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: Colors.white54, size: 20),
+          Icon(icon, color: Colors.grey, size: 20),
           const SizedBox(width: 12),
-          SizedBox(width: 70, child: Text(label, style: const TextStyle(color: Colors.white54))),
-          Expanded(child: Text(value, style: const TextStyle(color: Colors.white))),
+          SizedBox(width: 70, child: Text(label, style: const TextStyle(color: Colors.grey))),
+          Expanded(child: Text(value, style: Theme.of(context).textTheme.bodyLarge)),
           if (isValid)
-            Icon(isAuth ? Icons.security : Icons.check_circle, color: Colors.greenAccent, size: 18),
+            Icon(isAuth ? Icons.security : Icons.check_circle, color: Colors.green, size: 18),
         ],
       ),
     );
@@ -134,9 +184,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Image.asset('assets/Logo.png', width: 32, height: 32).animate().fade(duration: 600.ms),
             const SizedBox(width: 12),
-            Text('MailFlow', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+            Text('MailFlow', style: Theme.of(context).appBarTheme.titleTextStyle),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.contacts),
+            tooltip: 'View Saved Contacts',
+            onPressed: _showAllContacts,
+          )
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -145,7 +202,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.history_rounded, size: 64, color: Colors.white24).animate().fade().scale(),
+                      const Icon(Icons.history_rounded, size: 64, color: Colors.grey).animate().fade().scale(),
                       const SizedBox(height: 16),
                       Text(
                         'No emails scheduled yet.',
@@ -155,6 +212,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 )
               : ListView.builder(
+                  physics: const BouncingScrollPhysics(),
                   padding: const EdgeInsets.all(16),
                   itemCount: _history.length,
                   itemBuilder: (context, index) {
@@ -162,7 +220,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(20),
                         onTap: () => _showEmailDetails(item),
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -182,8 +240,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   children: [
                                     Text(item.subject.isNotEmpty ? item.subject : '(No Subject)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                                     const SizedBox(height: 4),
-                                    Text('From: \${item.senderEmail}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                                    Text('\${item.scheduledDate} at \${item.scheduledTime}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                    Text('From: \${item.senderEmail}', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12)),
+                                    Text('\${item.scheduledDate} at \${item.scheduledTime}', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12)),
                                   ],
                                 ),
                               ),
@@ -192,13 +250,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: item.status == 'Success' ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
+                                      color: item.status == 'Success' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
                                       item.status,
                                       style: TextStyle(
-                                        color: item.status == 'Success' ? Colors.greenAccent : Colors.orangeAccent,
+                                        color: item.status == 'Success' ? Colors.green : Colors.orange,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 10,
                                       ),
@@ -208,7 +266,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       IconButton(
-                                        icon: const Icon(Icons.edit, size: 20, color: Colors.white54),
+                                        icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
                                         onPressed: () => _openScheduleModal(existingEmail: item),
                                         tooltip: 'Edit',
                                       ),
@@ -232,6 +290,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onPressed: () => _openScheduleModal(),
         icon: const Icon(Icons.add),
         label: const Text('Schedule Email'),
+        backgroundColor: Theme.of(context).primaryColor,
+        foregroundColor: Colors.white,
       ).animate().scale(delay: 500.ms, duration: 400.ms, curve: Curves.easeOutBack),
     );
   }
@@ -249,6 +309,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   late String _sendType;
   
   final TextEditingController _senderController = TextEditingController();
+  List<String> _suggestedSenders = [];
   bool _isAuthenticated = false;
   final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'https://www.googleapis.com/auth/gmail.send']);
 
@@ -265,6 +326,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   @override
   void initState() {
     super.initState();
+    _loadSuggestedSenders();
     if (widget.editEmail != null) {
       final email = widget.editEmail!;
       _sendType = email.type;
@@ -289,6 +351,13 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     }
   }
 
+  Future<void> _loadSuggestedSenders() async {
+    final senders = await StorageService.getSenderEmails();
+    setState(() {
+      _suggestedSenders = senders;
+    });
+  }
+
   @override
   void dispose() {
     _senderController.dispose();
@@ -300,8 +369,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     super.dispose();
   }
 
-  Future<void> _authenticateWithGoogle() async {
-    if (!_isValidEmail(_senderController.text)) {
+  Future<void> _authenticateWithGoogle(String currentEmail) async {
+    if (!_isValidEmail(currentEmail)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a valid Sender Email first.')));
       return;
     }
@@ -312,13 +381,16 @@ class _ScheduleModalState extends State<_ScheduleModal> {
           _isAuthenticated = true;
           _senderController.text = account.email;
         });
+        await StorageService.saveSenderEmail(account.email);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Authenticated Successfully!')));
       }
     } catch (error) {
       setState(() {
         _isAuthenticated = true;
+        _senderController.text = currentEmail;
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Demo Auth Success!')));
+      await StorageService.saveSenderEmail(currentEmail);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Demo Auth Success! Sender saved to Autocomplete memory.')));
     }
   }
 
@@ -331,15 +403,29 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf'],
+      withData: true, // Crucial for Web Compatibility
     );
 
-    if (result != null && result.files.single.path != null) {
-      final path = result.files.single.path!;
-      final emails = await PdfParser.extractEmailsFromPdf(path);
+    if (result != null) {
+      List<String> emails = [];
+      if (result.files.single.bytes != null) {
+        // Read directly from bytes (Web or Desktop)
+        emails = await PdfParser.extractEmailsFromPdfBytes(result.files.single.bytes!);
+      } else if (result.files.single.path != null) {
+        // Fallback for desktop if bytes are somehow missing but path exists
+        final file = File(result.files.single.path!);
+        final bytes = await file.readAsBytes();
+        emails = await PdfParser.extractEmailsFromPdfBytes(bytes);
+      }
+      
       setState(() {
         _pdfPath = result.files.single.name;
         _pdfEmails = emails;
       });
+      
+      if (emails.isNotEmpty) {
+        await StorageService.saveExtractedEmails(emails); // Save perfectly extracted emails permanently
+      }
     }
   }
 
@@ -349,21 +435,23 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       builder: (context) {
         return Dialog(
           backgroundColor: Theme.of(context).cardTheme.color,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Container(
             padding: const EdgeInsets.all(16),
-            height: 400,
+            height: MediaQuery.of(context).size.height * 0.7,
             child: Column(
               children: [
-                Text('Extracted Emails (\${_pdfEmails.length})', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+                Text('Extracted Emails (\${_pdfEmails.length})', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 20)),
                 const SizedBox(height: 16),
                 Expanded(
                   child: ListView.builder(
+                    physics: const BouncingScrollPhysics(),
                     itemCount: _pdfEmails.length,
                     itemBuilder: (context, index) {
                       return ListTile(
-                        leading: const Icon(Icons.email, color: Colors.white54),
-                        title: Text(_pdfEmails[index], style: const TextStyle(color: Colors.white)),
-                        trailing: const Icon(Icons.check_circle, color: Colors.greenAccent, size: 16),
+                        leading: const Icon(Icons.email, color: Colors.grey),
+                        title: Text(_pdfEmails[index], style: Theme.of(context).textTheme.bodyLarge),
+                        trailing: const Icon(Icons.check_circle, color: Colors.green, size: 16),
                       );
                     },
                   ),
@@ -403,7 +491,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   }
 
   Future<void> _submit() async {
-    if (!_isValidEmail(_senderController.text) || !_isAuthenticated) {
+    final senderText = _senderController.text.trim();
+    if (!_isValidEmail(senderText) || !_isAuthenticated) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please authenticate a valid Sender Email.')));
       return;
     }
@@ -439,10 +528,13 @@ class _ScheduleModalState extends State<_ScheduleModal> {
         return;
       }
     }
+    
+    // Save these recipients to global contacts too!
+    await StorageService.saveExtractedEmails(recipients);
 
     final newEmail = ScheduledEmail(
       id: widget.editEmail?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      senderEmail: _senderController.text.trim(),
+      senderEmail: senderText,
       type: _sendType,
       recipients: recipients,
       subject: _subjectController.text,
@@ -459,6 +551,36 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     
     if (mounted) Navigator.pop(context);
   }
+  
+  Widget _buildCustomSegment(String type) {
+    final isSelected = _sendType == type;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _sendType = type),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? Theme.of(context).primaryColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? Theme.of(context).primaryColor : Colors.grey.withOpacity(0.3),
+            ),
+          ),
+          child: Center(
+            child: Text(
+              type,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -474,6 +596,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
         child: AnimatedSize(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
@@ -481,18 +604,42 @@ class _ScheduleModalState extends State<_ScheduleModal> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(widget.editEmail != null ? 'Edit Schedule' : 'New Schedule', style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+              Text(widget.editEmail != null ? 'Edit Schedule' : 'New Schedule', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 24)),
               const SizedBox(height: 24),
               
-              TextField(
-                controller: _senderController,
-                decoration: InputDecoration(
-                  hintText: 'Sender Email (e.g. you@gmail.com)',
-                  prefixIcon: const Icon(Icons.account_circle, color: Colors.white54),
-                  suffixIcon: _isAuthenticated ? const Icon(Icons.security, color: Colors.greenAccent) : null,
-                ),
-                enabled: !_isAuthenticated,
+              Autocomplete<String>(
+                optionsBuilder: (TextEditingValue textEditingValue) {
+                  if (textEditingValue.text == '') {
+                    return const Iterable<String>.empty();
+                  }
+                  return _suggestedSenders.where((String option) {
+                    return option.contains(textEditingValue.text.toLowerCase());
+                  });
+                },
+                onSelected: (String selection) {
+                  _senderController.text = selection;
+                },
+                fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                  // Keep our custom controller synced with Autocomplete's controller
+                  if (_senderController.text.isNotEmpty && textEditingController.text.isEmpty) {
+                    textEditingController.text = _senderController.text;
+                  }
+                  textEditingController.addListener(() {
+                    _senderController.text = textEditingController.text;
+                  });
+                  return TextField(
+                    controller: textEditingController,
+                    focusNode: focusNode,
+                    decoration: InputDecoration(
+                      hintText: 'Sender Email (e.g. you@gmail.com)',
+                      prefixIcon: const Icon(Icons.account_circle, color: Colors.grey),
+                      suffixIcon: _isAuthenticated ? const Icon(Icons.security, color: Colors.green) : null,
+                    ),
+                    enabled: !_isAuthenticated,
+                  );
+                },
               ),
+
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
                 child: !_isAuthenticated 
@@ -502,7 +649,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
-                            onPressed: _authenticateWithGoogle,
+                            onPressed: () => _authenticateWithGoogle(_senderController.text),
                             icon: const Icon(Icons.security),
                             label: const Text('Authenticate with Google'),
                             style: OutlinedButton.styleFrom(
@@ -517,14 +664,14 @@ class _ScheduleModalState extends State<_ScheduleModal> {
               ),
               const SizedBox(height: 32),
 
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'Single', label: Text('Single')),
-                  ButtonSegment(value: 'Multiple', label: Text('Multiple')),
-                  ButtonSegment(value: 'PDF', label: Text('PDF')),
+              Row(
+                children: [
+                  _buildCustomSegment('Single'),
+                  const SizedBox(width: 8),
+                  _buildCustomSegment('Multiple'),
+                  const SizedBox(width: 8),
+                  _buildCustomSegment('PDF'),
                 ],
-                selected: {_sendType},
-                onSelectionChanged: (set) => setState(() => _sendType = set.first),
               ),
               const SizedBox(height: 24),
 
@@ -536,7 +683,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       controller: _emailControllers[index],
                       decoration: InputDecoration(
                         hintText: 'Recipient Email',
-                        prefixIcon: const Icon(Icons.email_outlined, color: Colors.white54),
+                        prefixIcon: const Icon(Icons.email_outlined, color: Colors.grey),
                         suffixIcon: _sendType == 'Multiple' && _emailControllers.length > 1
                             ? IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent), onPressed: () => setState(() => _emailControllers.removeAt(index)))
                             : null,
@@ -558,17 +705,17 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     border: Border.all(color: Theme.of(context).primaryColor, width: 2),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                     color: Theme.of(context).cardTheme.color,
                   ),
                   child: Column(
                     children: [
                       Icon(Icons.picture_as_pdf, size: 48, color: Theme.of(context).primaryColor),
                       const SizedBox(height: 16),
-                      Text(_pdfPath ?? 'No PDF Selected', style: const TextStyle(color: Colors.white70)),
+                      Text(_pdfPath ?? 'No PDF Selected', style: Theme.of(context).textTheme.bodyLarge),
                       if (_pdfEmails.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        Text('\${_pdfEmails.length} emails extracted!', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+                        Text('\${_pdfEmails.length} emails extracted!', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
                         TextButton.icon(
                           onPressed: _reviewExtractedEmails,
@@ -585,7 +732,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
               const SizedBox(height: 24),
               TextField(
                 controller: _subjectController,
-                decoration: const InputDecoration(hintText: 'Subject', prefixIcon: Icon(Icons.subject, color: Colors.white54)),
+                decoration: const InputDecoration(hintText: 'Subject', prefixIcon: Icon(Icons.subject, color: Colors.grey)),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -602,7 +749,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       controller: _dateController,
                       keyboardType: TextInputType.number,
                       inputFormatters: [DateInputFormatter()],
-                      decoration: const InputDecoration(hintText: 'DD/MM/YYYY', prefixIcon: Icon(Icons.calendar_today, color: Colors.white54)),
+                      decoration: const InputDecoration(hintText: 'DD/MM/YYYY', prefixIcon: Icon(Icons.calendar_today, color: Colors.grey)),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -621,8 +768,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         InkWell(
                           onTap: () => setState(() => _isAm = !_isAm),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
-                            decoration: BoxDecoration(color: Theme.of(context).cardTheme.color, borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                            decoration: BoxDecoration(color: Theme.of(context).primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(16)),
                             child: Text(_isAm ? 'AM' : 'PM', style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
                           ),
                         ),

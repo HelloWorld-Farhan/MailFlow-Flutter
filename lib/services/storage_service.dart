@@ -34,4 +34,36 @@ class StorageService {
       await prefs.setStringList(_emailsKey, emails.reversed.map((e) => e.toJson()).toList());
     }
   }
+
+  // Sender Email Autocomplete Storage
+  static const String _sendersKey = 'saved_senders';
+  
+  static Future<List<String>> getSenderEmails() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_sendersKey) ?? [];
+  }
+
+  static Future<void> saveSenderEmail(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> senders = prefs.getStringList(_sendersKey) ?? [];
+    if (!senders.contains(email)) {
+      senders.add(email);
+      await prefs.setStringList(_sendersKey, senders);
+    }
+  }
+
+  // Permanent Contacts (PDF Extracted) Storage
+  static const String _contactsKey = 'saved_contacts';
+
+  static Future<List<String>> getExtractedEmails() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_contactsKey) ?? [];
+  }
+
+  static Future<void> saveExtractedEmails(List<String> newEmails) async {
+    final prefs = await SharedPreferences.getInstance();
+    Set<String> contacts = (prefs.getStringList(_contactsKey) ?? []).toSet();
+    contacts.addAll(newEmails);
+    await prefs.setStringList(_contactsKey, contacts.toList());
+  }
 }

@@ -33,12 +33,27 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Center(
-                  fontSize: 16,
-                  color: Colors.white54,
-                ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              'assets/Logo.png',
+              width: 120,
+              height: 120,
+            ).animate()
+             .fade(duration: 800.ms)
+             .scale(delay: 200.ms, duration: 600.ms, curve: Curves.easeOutBack),
+            const SizedBox(height: 24),
+            Text(
+              'MailFlow',
+              style: Theme.of(context).textTheme.displayLarge?.copyWith(
+                letterSpacing: 2,
+                fontSize: 32,
               ),
-            ],
-          ),
+            ).animate()
+             .fade(delay: 600.ms, duration: 800.ms)
+             .slideY(begin: 0.5, end: 0, curve: Curves.easeOut),
+          ],
         ),
       ),
     );

@@ -1,17 +1,10 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 class PdfParser {
-  /// Extracts all valid email addresses from a given PDF file path.
-  static Future<List<String>> extractEmailsFromPdf(String filePath) async {
+  /// Extracts all valid email addresses from raw PDF bytes (Web/Desktop compatible).
+  static Future<List<String>> extractEmailsFromPdfBytes(Uint8List bytes) async {
     try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        print('File does not exist: $filePath');
-        return [];
-      }
-
-      final bytes = await file.readAsBytes();
       final PdfDocument document = PdfDocument(inputBytes: bytes);
       
       // Extract text from all pages

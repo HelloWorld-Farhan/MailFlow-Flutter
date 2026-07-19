@@ -14,7 +14,7 @@ class MailFlowApp extends StatelessWidget {
     return MaterialApp(
       title: 'MailFlow',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
       home: const SplashScreen(),
     );
   }
