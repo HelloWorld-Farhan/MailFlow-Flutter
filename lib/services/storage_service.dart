@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scheduled_email.dart';
 import '../models/template_item.dart';
@@ -101,34 +102,47 @@ class StorageService {
     }
   }
 
-  // Global Daily Sent Limit Tracking
+  // Global Daily Sent Limit Tracking per Sender
   static String _todayString() {
     final now = DateTime.now();
     return '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
   }
 
-  static Future<int> getDailySentCount() async {
+  static Future<Map<String, int>> getAllDailyLimits() async {
     final prefs = await SharedPreferences.getInstance();
     final date = prefs.getString('daily_sent_date');
     final today = _todayString();
+    
     if (date != today) {
-      await prefs.setInt('daily_sent_count', 0);
+      await prefs.setString('daily_sent_map', '{}');
       await prefs.setString('daily_sent_date', today);
-      return 0;
+      return {};
     }
-    return prefs.getInt('daily_sent_count') ?? 0;
+    
+    final mapStr = prefs.getString('daily_sent_map');
+    if (mapStr == null || mapStr.isEmpty) return {};
+    
+    try {
+      final Map<String, dynamic> decoded = jsonDecode(mapStr);
+      return decoded.map((key, value) => MapEntry(key, value as int));
+    } catch (e) {
+      return {};
+    }
   }
 
-  static Future<void> incrementDailySentCount() async {
+  static Future<int> getDailySentCount(String senderEmail) async {
+    final limits = await getAllDailyLimits();
+    return limits[senderEmail] ?? 0;
+  }
+
+  static Future<void> incrementDailySentCount(String senderEmail) async {
     final prefs = await SharedPreferences.getInstance();
-    final date = prefs.getString('daily_sent_date');
-    final today = _todayString();
-    int count = prefs.getInt('daily_sent_count') ?? 0;
-    if (date != today) {
-      count = 0;
-    }
-    count++;
-    await prefs.setInt('daily_sent_count', count);
-    await prefs.setString('daily_sent_date', today);
+    final limits = await getAllDailyLimits();
+    
+    int current = limits[senderEmail] ?? 0;
+    limits[senderEmail] = current + 1;
+    
+    await prefs.setString('daily_sent_map', jsonEncode(limits));
+    await prefs.setString('daily_sent_date', _todayString());
   }
 }

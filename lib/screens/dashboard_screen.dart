@@ -12,6 +12,7 @@ import '../utils/pdf_parser.dart';
 import '../theme/app_theme.dart';
 import 'settings_screen.dart';
 import 'email_detail_screen.dart';
+import 'email_limit_screen.dart';
 import '../models/template_item.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       useSafeArea: true,
-      builder: (context) => _ScheduleModal(editEmail: existingEmail, dailySentCount: _dailySentCount),
+      builder: (context) => _ScheduleModal(editEmail: existingEmail),
     ).then((_) => _loadHistory());
   }
 
@@ -179,6 +180,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 icon: const Icon(Icons.group_outlined, color: AppTheme.textMid),
                 tooltip: 'Email Groups',
                 onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmailDetailScreen())),
+              ),
+              IconButton(
+                icon: const Icon(Icons.data_usage_rounded, color: AppTheme.textMid),
+                tooltip: 'Email Limits',
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmailLimitScreen())),
               ),
               IconButton(
                 icon: const Icon(Icons.settings_outlined, color: AppTheme.textMid),
@@ -889,8 +895,7 @@ class _DetailsDialogState extends State<_DetailsDialog> {
 // ─────────────────────────────────────────────────────────────────────────────
 class _ScheduleModal extends StatefulWidget {
   final ScheduledEmail? editEmail;
-  final int dailySentCount;
-  const _ScheduleModal({this.editEmail, this.dailySentCount = 0});
+  const _ScheduleModal({this.editEmail});
 
   @override
   State<_ScheduleModal> createState() => _ScheduleModalState();
@@ -934,12 +939,14 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   // For inline editing of PDF emails
   final List<TextEditingController> _pdfEmailControllers = [];
   bool _isPdfEmailEditing = false;
+  int _currentSenderUsage = 0;
 
   @override
   void initState() {
     super.initState();
     _loadSenders();
     _loadTemplates();
+    _senderController.addListener(_onSenderChanged);
     if (widget.editEmail != null) {
       final e = widget.editEmail!;
       _sendType = e.type;
@@ -974,6 +981,16 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   Future<void> _loadSenders() async {
     final s = await StorageService.getSenderEmails();
     setState(() => _suggestedSenders = s);
+  }
+
+  void _onSenderChanged() async {
+    final email = _senderController.text.trim();
+    if (_isValidEmail(email)) {
+      final count = await StorageService.getDailySentCount(email);
+      if (mounted) setState(() => _currentSenderUsage = count);
+    } else {
+      if (mounted) setState(() => _currentSenderUsage = 0);
+    }
   }
 
   @override
@@ -1323,6 +1340,28 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     ),
                   ],
                   _buildFieldMsg(_senderMsg, _isSenderErr),
+                  if (_isValidEmail(_senderController.text)) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          _currentSenderUsage >= 50 ? Icons.warning_rounded : Icons.info_outline_rounded, 
+                          size: 14, 
+                          color: _currentSenderUsage >= 50 ? AppTheme.errorRed : AppTheme.textMid,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Daily limit usage: $_currentSenderUsage / 50',
+                          style: TextStyle(
+                            fontFamily: 'Inter', 
+                            fontSize: 12, 
+                            fontWeight: _currentSenderUsage >= 50 ? FontWeight.bold : FontWeight.normal,
+                            color: _currentSenderUsage >= 50 ? AppTheme.errorRed : AppTheme.textMid,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 24),
 
                   // ── Section 3: Recipients ──────────────────────────
@@ -1710,7 +1749,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   const SizedBox(height: 28),
 
                   // Submit
-                  if (widget.dailySentCount >= 50)
+                  if (_currentSenderUsage >= 50)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),

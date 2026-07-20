@@ -74,7 +74,7 @@ class BackgroundDispatcher {
   }
 
   static Future<void> _sendSingle(ScheduledEmail email, String token) async {
-    if (await StorageService.getDailySentCount() >= 50) return;
+    if (await StorageService.getDailySentCount(email.senderEmail) >= 50) return;
     final recipient = email.recipients.isNotEmpty ? email.recipients[0] : '';
     // Mark as in-process
     final statuses = Map<String, String>.from(email.recipientStatuses);
@@ -82,7 +82,7 @@ class BackgroundDispatcher {
     await StorageService.updateEmail(email.copyWith(status: 'Sending...', recipientStatuses: statuses));
     final success = await MailService.sendEmail(emailConfig: email, accessToken: token);
     if (success) {
-      await StorageService.incrementDailySentCount();
+      await StorageService.incrementDailySentCount(email.senderEmail);
       if (recipient.isNotEmpty) statuses[recipient] = 'sent';
     } else {
       if (recipient.isNotEmpty) statuses[recipient] = 'failed';
@@ -101,7 +101,7 @@ class BackgroundDispatcher {
       if (!statuses.containsKey(r)) statuses[r] = 'pending';
     }
     for (int i = 0; i < total; i++) {
-      if (await StorageService.getDailySentCount() >= 50) break;
+      if (await StorageService.getDailySentCount(email.senderEmail) >= 50) break;
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
       final st = 'Doing it... (' + i.toString() + '/' + total.toString() + ')';
@@ -109,7 +109,7 @@ class BackgroundDispatcher {
       final single = email.copyWith(recipients: [recipient]);
       final success = await MailService.sendEmail(emailConfig: single, accessToken: token);
       if (success) {
-        await StorageService.incrementDailySentCount();
+        await StorageService.incrementDailySentCount(email.senderEmail);
         statuses[recipient] = 'sent';
       } else {
         statuses[recipient] = 'failed';
@@ -132,7 +132,7 @@ class BackgroundDispatcher {
       if (!statuses.containsKey(r)) statuses[r] = 'pending';
     }
     for (int i = startIdx; i < endIdx; i++) {
-      if (await StorageService.getDailySentCount() >= 50) break;
+      if (await StorageService.getDailySentCount(email.senderEmail) >= 50) break;
       final latestList = await StorageService.getEmails();
       final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
       if (cur.status == 'Paused') return;
@@ -143,7 +143,7 @@ class BackgroundDispatcher {
       final single = email.copyWith(recipients: [recipient]);
       final success = await MailService.sendEmail(emailConfig: single, accessToken: token);
       if (success) {
-        await StorageService.incrementDailySentCount();
+        await StorageService.incrementDailySentCount(email.senderEmail);
         statuses[recipient] = 'sent';
       } else {
         statuses[recipient] = 'failed';
