@@ -14,6 +14,8 @@ class ScheduledEmail {
   final int sentCount;
   final int dailyLimit;
   final String? lastSentDate;
+  // Per-recipient statuses: 'sent', 'failed', 'inProcess', 'pending'
+  final Map<String, String> recipientStatuses;
 
   ScheduledEmail({
     required this.id,
@@ -29,7 +31,8 @@ class ScheduledEmail {
     this.sentCount = 0,
     this.dailyLimit = 0,
     this.lastSentDate,
-  });
+    Map<String, String>? recipientStatuses,
+  }) : recipientStatuses = recipientStatuses ?? {};
 
   ScheduledEmail copyWith({
     String? id,
@@ -45,6 +48,7 @@ class ScheduledEmail {
     int? sentCount,
     int? dailyLimit,
     String? lastSentDate,
+    Map<String, String>? recipientStatuses,
   }) {
     return ScheduledEmail(
       id: id ?? this.id,
@@ -60,6 +64,7 @@ class ScheduledEmail {
       sentCount: sentCount ?? this.sentCount,
       dailyLimit: dailyLimit ?? this.dailyLimit,
       lastSentDate: lastSentDate ?? this.lastSentDate,
+      recipientStatuses: recipientStatuses ?? this.recipientStatuses,
     );
   }
 
@@ -78,6 +83,7 @@ class ScheduledEmail {
       'sentCount': sentCount,
       'dailyLimit': dailyLimit,
       'lastSentDate': lastSentDate,
+      'recipientStatuses': recipientStatuses,
     };
   }
 
@@ -96,10 +102,14 @@ class ScheduledEmail {
       sentCount: map['sentCount'] ?? 0,
       dailyLimit: map['dailyLimit'] ?? 0,
       lastSentDate: map['lastSentDate'],
+      recipientStatuses: map['recipientStatuses'] != null
+          ? Map<String, String>.from(map['recipientStatuses'])
+          : {},
     );
   }
 
   String toJson() => json.encode(toMap());
 
-  factory ScheduledEmail.fromJson(String source) => ScheduledEmail.fromMap(json.decode(source));
+  factory ScheduledEmail.fromJson(String source) =>
+      ScheduledEmail.fromMap(json.decode(source));
 }

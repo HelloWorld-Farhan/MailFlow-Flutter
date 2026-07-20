@@ -178,6 +178,28 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
 
   Future<void> _deleteTemplate(String id) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Deletion', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+        content: const Text('Are you sure you want to delete this? This information will be permanently deleted and cannot be recovered.', style: TextStyle(fontFamily: 'Inter')),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(fontFamily: 'Inter', color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     await StorageService.deleteTemplate(id);
     _loadTemplates();
   }

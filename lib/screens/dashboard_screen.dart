@@ -77,6 +77,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _deleteEmail(String id) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Deletion', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+        content: const Text('Are you sure you want to delete this schedule? If you delete it, the process will be terminated and this info will be unrecoverable.', style: TextStyle(fontFamily: 'Inter')),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(fontFamily: 'Inter', color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     await StorageService.deleteEmail(id);
     _loadHistory();
   }
@@ -660,6 +682,7 @@ class _DetailsDialog extends StatefulWidget {
 
 class _DetailsDialogState extends State<_DetailsDialog> {
   bool _showBody = false;
+  bool _showRecipients = false;
 
   @override
   Widget build(BuildContext context) {
@@ -748,35 +771,87 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                 ),
               ],
               const SizedBox(height: 16),
-              _sectionLabel('Recipients (${email.recipients.length})'),
-              ...email.recipients.map((r) {
-                IconData statusIcon;
-                Color statusColor;
-                if (email.status == 'Success') {
-                  statusIcon = Icons.check_circle_rounded;
-                  statusColor = AppTheme.successGreen;
-                } else if (email.status == 'In Process') {
-                  statusIcon = Icons.sync_rounded;
-                  statusColor = AppTheme.primaryBlue;
-                } else if (email.status == 'Failed') {
-                  statusIcon = Icons.cancel_rounded;
-                  statusColor = AppTheme.errorRed;
-                } else {
-                  statusIcon = Icons.schedule_rounded;
-                  statusColor = AppTheme.warningAmber;
-                }
-                
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
+              // Collapsible Recipients Section
+              GestureDetector(
+                onTap: () => setState(() => _showRecipients = !_showRecipients),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryBlue.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.3)),
+                  ),
                   child: Row(
                     children: [
-                      Icon(statusIcon, color: statusColor, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(r, style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textDark))),
+                      const Icon(Icons.group_rounded, size: 18, color: AppTheme.primaryBlue),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Recipients (${email.recipients.length})',
+                          style: const TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
+                        ),
+                      ),
+                      Icon(
+                        _showRecipients ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        color: AppTheme.primaryBlue, size: 20,
+                      ),
                     ],
                   ),
-                );
-              }),
+                ),
+              ),
+              if (_showRecipients) ...[
+                const SizedBox(height: 8),
+                Container(
+                  height: MediaQuery.of(context).size.height * 0.35,
+                  decoration: BoxDecoration(
+                    color: AppTheme.bgSurface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.divider),
+                  ),
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: email.recipients.length,
+                    itemBuilder: (ctx, idx) {
+                      final r = email.recipients[idx];
+                      final rStatus = email.recipientStatuses[r];
+                      IconData icon;
+                      Color color;
+                      if (rStatus == 'sent' || (rStatus == null && email.status == 'Success')) {
+                        icon = Icons.check_circle_rounded; color = AppTheme.successGreen;
+                      } else if (rStatus == 'inProcess') {
+                        icon = Icons.sync_rounded; color = AppTheme.primaryBlue;
+                      } else if (rStatus == 'failed') {
+                        icon = Icons.cancel_rounded; color = AppTheme.errorRed;
+                      } else {
+                        icon = Icons.radio_button_unchecked_rounded; color = AppTheme.textLight;
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 5),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 28, height: 28,
+                              decoration: BoxDecoration(
+                                color: color.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(icon, size: 16, color: color),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                r,
+                                style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textDark, height: 1.3),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -855,6 +930,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   String? _scheduleNameMsg; bool _isScheduleNameErr = false;
   String? _subjectMsg; bool _isSubjectErr = false;
   String? _bodyMsg; bool _isBodyErr = false;
+  bool _showPdfEmails = false;
+  // For inline editing of PDF emails
+  final List<TextEditingController> _pdfEmailControllers = [];
+  bool _isPdfEmailEditing = false;
 
   @override
   void initState() {
@@ -946,7 +1025,11 @@ class _ScheduleModalState extends State<_ScheduleModal> {
         final bytes = await File(result.files.single.path!).readAsBytes();
         emails = await PdfParser.extractEmailsFromPdfBytes(bytes);
       }
-      setState(() { _pdfPath = result.files.single.name; _pdfEmails = emails; });
+      // Build controllers for editing
+      for (var c in _pdfEmailControllers) c.dispose();
+      _pdfEmailControllers.clear();
+      for (final e in emails) _pdfEmailControllers.add(TextEditingController(text: e));
+      setState(() { _pdfPath = result.files.single.name; _pdfEmails = emails; _showPdfEmails = true; });
       if (emails.isNotEmpty) await StorageService.saveExtractedEmails(emails);
     }
   }
@@ -1138,43 +1221,76 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   Autocomplete<String>(
                     optionsBuilder: (v) => v.text.isEmpty
                         ? const Iterable<String>.empty()
-                        : _suggestedSenders.where((s) => s.contains(v.text.toLowerCase())),
-                    onSelected: (s) => _senderController.text = s,
-                    optionsViewBuilder: (BuildContext context, AutocompleteOnSelected<String> onSelected, Iterable<String> options) {
+                        : _suggestedSenders.where((s) => s.toLowerCase().contains(v.text.toLowerCase())),
+                    onSelected: (s) => setState(() => _senderController.text = s),
+                    optionsViewBuilder: (BuildContext ctx2, AutocompleteOnSelected<String> onSelected, Iterable<String> options) {
                       return Align(
                         alignment: Alignment.topLeft,
                         child: Material(
                           color: Colors.transparent,
                           child: Container(
-                            width: MediaQuery.of(context).size.width - 40,
-                            margin: const EdgeInsets.only(top: 0),
+                            width: MediaQuery.of(ctx2).size.width - 40,
+                            constraints: const BoxConstraints(maxHeight: 220),
+                            margin: const EdgeInsets.only(top: 4),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFE8E8E8),
-                              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 4, offset: const Offset(0, 4))],
-                              border: const Border(
-                                left: BorderSide(color: AppTheme.primaryBlue, width: 1.5),
-                                right: BorderSide(color: AppTheme.primaryBlue, width: 1.5),
-                                bottom: BorderSide(color: AppTheme.primaryBlue, width: 1.5),
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(color: AppTheme.primaryBlue.withOpacity(0.15), blurRadius: 20, offset: const Offset(0, 8)),
+                                BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 6, offset: const Offset(0, 2)),
+                              ],
+                              border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.2)),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                shrinkWrap: true,
+                                itemCount: options.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFEEEEF5)),
+                                itemBuilder: (BuildContext ctx3, int index) {
+                                  final String option = options.elementAt(index);
+                                  return InkWell(
+                                    onTap: () => onSelected(option),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            width: 32, height: 32,
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: [AppTheme.primaryBlue, AppTheme.primaryBlue.withOpacity(0.7)],
+                                                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                                              ),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Center(
+                                              child: Text(
+                                                option.isNotEmpty ? option[0].toUpperCase() : '?',
+                                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              option,
+                                              style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark, fontWeight: FontWeight.w500),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          const Icon(Icons.north_west_rounded, size: 14, color: AppTheme.textLight),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
-                            child: ListView.builder(
-                              padding: EdgeInsets.zero,
-                              shrinkWrap: true,
-                              itemCount: options.length,
-                              itemBuilder: (BuildContext context, int index) {
-                                final String option = options.elementAt(index);
-                                return InkWell(
-                                  onTap: () => onSelected(option),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                    child: Text(option, style: const TextStyle(fontFamily: 'Inter', color: AppTheme.textMid, fontSize: 14)),
-                                  ),
-                                );
-                              },
-                            ),
                           ),
-                        ),
+                        ).animate().fade(duration: 200.ms).slideY(begin: -0.1, end: 0, duration: 200.ms, curve: Curves.easeOut),
                       );
                     },
                     fieldViewBuilder: (ctx, ctrl, focus, onSubmit) {
@@ -1194,6 +1310,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       );
                     },
                   ),
+
                   if (!_isAuthenticated) ...[
                     const SizedBox(height: 10),
                     SizedBox(
@@ -1273,7 +1390,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       label: const Text('Add Recipient'),
                     ),
 
-                  if (_sendType == 'PDF')
+                  if (_sendType == 'PDF') ...[
                     GestureDetector(
                       onTap: _pickPdf,
                       child: Container(
@@ -1311,6 +1428,135 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         ),
                       ).animate().fade().scale(),
                     ),
+                    // PDF Emails panel
+                    if (_pdfEmails.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      GestureDetector(
+                        onTap: () => setState(() => _showPdfEmails = !_showPdfEmails),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.successGreen.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: AppTheme.successGreen.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.list_alt_rounded, size: 18, color: AppTheme.successGreen),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  '${_pdfEmails.length} emails extracted — tap to ${_showPdfEmails ? 'hide' : 'review & edit'}',
+                                  style: const TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.successGreen),
+                                ),
+                              ),
+                              Icon(_showPdfEmails ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: AppTheme.successGreen),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_showPdfEmails) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          height: 260,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: AppTheme.divider),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+                          ),
+                          child: ListView.separated(
+                            padding: const EdgeInsets.all(8),
+                            physics: const BouncingScrollPhysics(),
+                            itemCount: _isPdfEmailEditing ? _pdfEmailControllers.length : _pdfEmails.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFEEEEF5)),
+                            itemBuilder: (ctx, idx) {
+                              if (_isPdfEmailEditing) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                                  child: Row(
+                                    children: [
+                                      Text('${idx + 1}.', style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.textLight, fontWeight: FontWeight.w600)),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: TextField(
+                                          controller: _pdfEmailControllers[idx],
+                                          style: const TextStyle(fontFamily: 'Inter', fontSize: 13),
+                                          decoration: const InputDecoration(
+                                            isDense: true,
+                                            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.remove_circle_outline, color: AppTheme.errorRed, size: 18),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        onPressed: () {
+                                          final removed = _pdfEmailControllers.removeAt(idx);
+                                          removed.dispose();
+                                          setState(() => _pdfEmails.removeAt(idx));
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 22, height: 22,
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primaryBlue.withOpacity(0.08),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Center(
+                                        child: Text('${idx + 1}', style: const TextStyle(fontFamily: 'Inter', fontSize: 10, color: AppTheme.primaryBlue, fontWeight: FontWeight.w700)),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(child: Text(_pdfEmails[idx], style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textDark))),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            if (_isPdfEmailEditing)
+                              TextButton.icon(
+                                onPressed: () {
+                                  // Save edits back
+                                  setState(() {
+                                    _pdfEmails = _pdfEmailControllers.map((c) => c.text.trim()).where((e) => e.isNotEmpty).toList();
+                                    _isPdfEmailEditing = false;
+                                  });
+                                },
+                                icon: const Icon(Icons.check_rounded, size: 16),
+                                label: const Text('Save Edits'),
+                              )
+                            else
+                              TextButton.icon(
+                                onPressed: () {
+                                  // Build controllers from current emails
+                                  for (var c in _pdfEmailControllers) c.dispose();
+                                  _pdfEmailControllers.clear();
+                                  for (final e in _pdfEmails) _pdfEmailControllers.add(TextEditingController(text: e));
+                                  setState(() => _isPdfEmailEditing = true);
+                                },
+                                icon: const Icon(Icons.edit_rounded, size: 16),
+                                label: const Text('Edit Emails'),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ],
                   _buildFieldMsg(_recipientMsg, _isRecipientErr),
                   if (_sendType == 'PDF') ...[
                     const SizedBox(height: 10),
@@ -1390,67 +1636,21 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     ),
                     _buildFieldMsg(_bodyMsg, _isBodyErr),
                   ] else ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppTheme.bgSurface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppTheme.divider),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.subject_rounded, size: 18, color: AppTheme.textLight),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<TemplateItem>(
-                                hint: const Text('Select Subject', style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid)),
-                                dropdownColor: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                isExpanded: true,
-                                value: _selectedSubject,
-                                items: _savedSubjects.map((s) => DropdownMenuItem(
-                                  value: s,
-                                  child: Text(s.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
-                                )).toList(),
-                                onChanged: (v) => setState(() => _selectedSubject = v),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                    _AnimatedDropdownPicker(
+                      icon: Icons.subject_rounded,
+                      hint: 'Select Subject',
+                      items: _savedSubjects,
+                      selected: _selectedSubject,
+                      onSelected: (v) => setState(() => _selectedSubject = v),
                     ),
                     _buildFieldMsg(_subjectMsg, _isSubjectErr),
                     const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppTheme.bgSurface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppTheme.divider),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.edit_note_rounded, size: 18, color: AppTheme.textLight),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<TemplateItem>(
-                                hint: const Text('Select Body', style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid)),
-                                dropdownColor: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                isExpanded: true,
-                                value: _selectedBody,
-                                items: _savedBodies.map((b) => DropdownMenuItem(
-                                  value: b,
-                                  child: Text(b.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
-                                )).toList(),
-                                onChanged: (v) => setState(() => _selectedBody = v),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                    _AnimatedDropdownPicker(
+                      icon: Icons.edit_note_rounded,
+                      hint: 'Select Body',
+                      items: _savedBodies,
+                      selected: _selectedBody,
+                      onSelected: (v) => setState(() => _selectedBody = v),
                     ),
                     _buildFieldMsg(_bodyMsg, _isBodyErr),
                   ],
@@ -1785,6 +1985,124 @@ class _ResendModalState extends State<_ResendModal> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AnimatedDropdownPicker extends StatelessWidget {
+  final IconData icon;
+  final String hint;
+  final List<TemplateItem> items;
+  final TemplateItem? selected;
+  final ValueChanged<TemplateItem?> onSelected;
+
+  const _AnimatedDropdownPicker({
+    required this.icon,
+    required this.hint,
+    required this.items,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  void _showPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppTheme.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Text('Select ${hint.replaceAll('Select ', '')}', style: const TextStyle(fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
+              const SizedBox(height: 16),
+              if (items.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('No saved items yet.', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textLight)),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1, color: AppTheme.divider),
+                    itemBuilder: (context, index) {
+                      final item = items[index];
+                      final isSelected = selected == item;
+                      return ListTile(
+                        onTap: () {
+                          onSelected(item);
+                          Navigator.pop(context);
+                        },
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: isSelected ? AppTheme.primaryBlue.withOpacity(0.1) : AppTheme.bgSurface,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(icon, color: isSelected ? AppTheme.primaryBlue : AppTheme.textLight, size: 20),
+                        ),
+                        title: Text(
+                          item.name,
+                          style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, color: isSelected ? AppTheme.primaryBlue : AppTheme.textDark),
+                        ),
+                        trailing: isSelected ? const Icon(Icons.check_circle_rounded, color: AppTheme.primaryBlue) : null,
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ).animate().slideY(begin: 1, end: 0, curve: Curves.easeOutQuart).fade();
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _showPicker(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppTheme.bgSurface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: selected != null ? AppTheme.primaryBlue.withOpacity(0.5) : AppTheme.divider),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: selected != null ? AppTheme.primaryBlue : AppTheme.textLight),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                selected?.name ?? hint,
+                style: TextStyle(
+                  fontFamily: 'Inter', fontSize: 14,
+                  fontWeight: selected != null ? FontWeight.w600 : FontWeight.w400,
+                  color: selected != null ? AppTheme.textDark : AppTheme.textMid,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: AppTheme.textLight),
+          ],
+        ),
       ),
     );
   }
