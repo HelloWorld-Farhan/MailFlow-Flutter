@@ -294,14 +294,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: AppTheme.successGreen,
                   ),
                   const SizedBox(width: 12),
-                  GestureDetector(
+                  _StatChip(
+                    icon: Icons.speed_rounded,
+                    label: 'Total Per Day',
+                    value: '$_totalDailySent',
+                    color: _totalDailySent >= 150 ? AppTheme.errorRed : (_totalDailySent >= 100 ? AppTheme.warningAmber : AppTheme.textMid),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmailLimitScreen())),
-                    child: _StatChip(
-                      icon: Icons.speed_rounded,
-                      label: 'Total Per Day',
-                      value: '$_totalDailySent',
-                      color: _totalDailySent >= 150 ? AppTheme.errorRed : (_totalDailySent >= 100 ? AppTheme.warningAmber : AppTheme.textMid),
-                    ),
                   ),
                 ],
               ).animate(delay: 200.ms).fade(duration: 400.ms),
@@ -376,30 +374,36 @@ class _StatChip extends StatelessWidget {
   final IconData icon;
   final String label, value;
   final Color color;
-  const _StatChip({required this.icon, required this.label, required this.value, required this.color});
+  final VoidCallback? onTap;
+  const _StatChip({required this.icon, required this.label, required this.value, required this.color, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.07),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.15)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(value, style: TextStyle(color: color, fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w700)),
-                Text(label, style: const TextStyle(color: AppTheme.textLight, fontFamily: 'Inter', fontSize: 11)),
-              ],
-            ),
-          ],
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.07),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withOpacity(0.15)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(value, style: TextStyle(color: color, fontFamily: 'Outfit', fontSize: 17, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(label, style: const TextStyle(color: AppTheme.textLight, fontFamily: 'Inter', fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
