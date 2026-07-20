@@ -26,7 +26,6 @@ class BackgroundDispatcher {
       _signInCache[senderEmail] = GoogleSignIn(
         clientId: '787471915530-sg4ul6fm6s1paqabljmksi9c61cf4c77.apps.googleusercontent.com',
         scopes: ['email', 'https://www.googleapis.com/auth/gmail.send'],
-        // loginHint tells Google to use this specific account
       );
     }
     return _signInCache[senderEmail]!;
@@ -55,9 +54,28 @@ class BackgroundDispatcher {
       if (email.status == 'Paused') continue;
       if (email.status.startsWith('Doing')) continue;
       if (email.status.startsWith('Sending')) continue;
+      if (email.status.startsWith('Merge Day')) continue;
       if (_activelySending.contains(email.id)) continue;
+
+      // ── Queue-After check ─────────────────────────────────────────────
+      if (email.queuedAfter != null && email.queuedAfter!.isNotEmpty) {
+        final blocker = emails.firstWhere(
+          (e) => e.id == email.queuedAfter,
+          orElse: () => email, // if blocker gone, allow sending
+        );
+        // Only unblock if the blocker is finished
+        if (blocker.id != email.id && blocker.status != 'Success' && blocker.status != 'Failed') {
+          continue; // still waiting for blocker to finish
+        }
+        // Blocker done — remove queuedAfter so it can proceed next cycle
+        if (blocker.status == 'Success' || blocker.status == 'Failed') {
+          await StorageService.updateEmail(email.copyWith(clearQueuedAfter: true));
+          continue; // will be picked up next timer cycle
+        }
+      }
+
       if (_isTimeArrived(email.scheduledDate, email.scheduledTime)) {
-        if (email.type == 'PDF' && email.dailyLimit > 0) {
+        if ((email.type == 'PDF' || email.isMerged) && email.dailyLimit > 0) {
           final today = _todayString();
           if (email.lastSentDate == today) continue;
         }
@@ -69,18 +87,14 @@ class BackgroundDispatcher {
 
   static Future<void> _processEmail(ScheduledEmail email) async {
     try {
-      // Use a per-sender GoogleSignIn to get the correct account's token
       final googleSignIn = _getSignIn(email.senderEmail);
 
       GoogleSignInAccount? account = googleSignIn.currentUser;
       if (account == null || account.email != email.senderEmail) {
-        // Try silent sign in first
         account = await googleSignIn.signInSilently();
       }
 
-      // If silent sign-in gave us wrong account or null, try all cached instances
       if (account == null || account.email != email.senderEmail) {
-        // Try to find any cached sign-in that has the right email
         for (final entry in _signInCache.entries) {
           if (entry.key == email.senderEmail) {
             final cur = entry.value.currentUser;
@@ -101,9 +115,15 @@ class BackgroundDispatcher {
       final token = auth.accessToken;
       if (token == null) return;
 
-      if (email.type == 'Single') await _sendSingle(email, token);
-      else if (email.type == 'Multiple') await _sendMultiple(email, token);
-      else if (email.type == 'PDF') await _sendPdfBatch(email, token);
+      if (email.isMerged) {
+        await _sendMergedPdfBatch(email, token);
+      } else if (email.type == 'Single') {
+        await _sendSingle(email, token);
+      } else if (email.type == 'Multiple') {
+        await _sendMultiple(email, token);
+      } else if (email.type == 'PDF') {
+        await _sendPdfBatch(email, token);
+      }
     } catch (e) {
       print('Dispatcher error: ' + e.toString());
     }
@@ -197,6 +217,78 @@ class BackgroundDispatcher {
     }
   }
 
+  // ── Merged PDF Batch Sending ────────────────────────────────────────────
+  // Recipients are interleaved: first N from source-A, then M from source-B
+  // based on mergeContributions map. Proportional split per day.
+  static Future<void> _sendMergedPdfBatch(ScheduledEmail email, String token) async {
+    final total = email.recipients.length;
+    final dailyLimit = email.dailyLimit > 0 ? email.dailyLimit : 40;
+    final startIdx = email.sentCount;
+    final endIdx = min(startIdx + dailyLimit, total);
+    final today = _todayString();
+    int newCount = startIdx;
+    final statuses = Map<String, String>.from(email.recipientStatuses);
+    for (final r in email.recipients) {
+      if (!statuses.containsKey(r)) statuses[r] = 'pending';
+    }
+
+    // Build today's contribution breakdown for status display
+    final contributions = email.mergeContributions;
+    final names = email.mergeSourceNames;
+    String mergeLabel = '';
+    if (contributions.isNotEmpty) {
+      mergeLabel = contributions.entries
+          .map((e) => '${names[e.key] ?? e.key}: ${e.value}/day')
+          .join(' | ');
+    }
+
+    for (int i = startIdx; i < endIdx; i++) {
+      if (await StorageService.getDailySentCount(email.senderEmail) >= 50) break;
+      final latestList = await StorageService.getEmails();
+      final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
+      if (cur.status == 'Paused') return;
+      final recipient = email.recipients[i];
+      statuses[recipient] = 'inProcess';
+      final st = 'Merge Day ${(i / dailyLimit).ceil() + 1}: $i/$total sent';
+      await StorageService.updateEmail(cur.copyWith(
+        status: st,
+        sentCount: i,
+        recipientStatuses: Map.from(statuses),
+      ));
+      final single = email.copyWith(recipients: [recipient]);
+      final success = await MailService.sendEmail(emailConfig: single, accessToken: token);
+      if (success) {
+        await StorageService.incrementDailySentCount(email.senderEmail);
+        statuses[recipient] = 'sent';
+      } else {
+        statuses[recipient] = 'failed';
+      }
+      newCount = i + 1;
+      if (i < endIdx - 1) await Future.delayed(const Duration(seconds: 5));
+    }
+    final latestList = await StorageService.getEmails();
+    final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
+    if (cur.status == 'Paused') return;
+
+    if (newCount >= total) {
+      await StorageService.updateEmail(cur.copyWith(
+        status: 'Success',
+        sentCount: newCount,
+        lastSentDate: today,
+        recipientStatuses: Map.from(statuses),
+      ));
+    } else {
+      final daysDone = (newCount / dailyLimit).ceil();
+      final dayStatus = 'Merge Day $daysDone: $newCount/$total sent [$mergeLabel]';
+      await StorageService.updateEmail(cur.copyWith(
+        status: dayStatus,
+        sentCount: newCount,
+        lastSentDate: today,
+        recipientStatuses: Map.from(statuses),
+      ));
+    }
+  }
+
   static String _todayString() {
     final now = DateTime.now();
     return now.day.toString().padLeft(2, '0') + '/' + now.month.toString().padLeft(2, '0') + '/' + now.year.toString();
@@ -224,8 +316,6 @@ class BackgroundDispatcher {
   // Called from UI after auth to cache the signed-in account
   static void registerSignedInAccount(GoogleSignInAccount account) {
     final googleSignIn = _getSignIn(account.email);
-    // The account is already in the GoogleSignIn instance after signIn() returns it
-    // We just ensure the entry exists in our cache
     _signInCache[account.email] = googleSignIn;
   }
 }

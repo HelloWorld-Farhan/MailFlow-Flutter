@@ -17,6 +17,18 @@ class ScheduledEmail {
   // Per-recipient statuses: 'sent', 'failed', 'inProcess', 'pending'
   final Map<String, String> recipientStatuses;
 
+  // ── Merge / Queue fields ──────────────────────────────────────────────
+  /// True if this schedule was created by merging two PDF schedules
+  final bool isMerged;
+  /// IDs of the source PDF schedules that were merged into this one
+  final List<String> mergedSourceIds;
+  /// sourceId → daily email allocation count (proportional split)
+  final Map<String, int> mergeContributions;
+  /// sourceId → display name of source schedule
+  final Map<String, String> mergeSourceNames;
+  /// ID of the PDF schedule this one waits for (Queue After mode)
+  final String? queuedAfter;
+
   ScheduledEmail({
     required this.id,
     required this.senderEmail,
@@ -32,7 +44,15 @@ class ScheduledEmail {
     this.dailyLimit = 0,
     this.lastSentDate,
     Map<String, String>? recipientStatuses,
-  }) : recipientStatuses = recipientStatuses ?? {};
+    this.isMerged = false,
+    List<String>? mergedSourceIds,
+    Map<String, int>? mergeContributions,
+    Map<String, String>? mergeSourceNames,
+    this.queuedAfter,
+  })  : recipientStatuses = recipientStatuses ?? {},
+        mergedSourceIds = mergedSourceIds ?? [],
+        mergeContributions = mergeContributions ?? {},
+        mergeSourceNames = mergeSourceNames ?? {};
 
   ScheduledEmail copyWith({
     String? id,
@@ -49,6 +69,12 @@ class ScheduledEmail {
     int? dailyLimit,
     String? lastSentDate,
     Map<String, String>? recipientStatuses,
+    bool? isMerged,
+    List<String>? mergedSourceIds,
+    Map<String, int>? mergeContributions,
+    Map<String, String>? mergeSourceNames,
+    String? queuedAfter,
+    bool clearQueuedAfter = false,
   }) {
     return ScheduledEmail(
       id: id ?? this.id,
@@ -65,6 +91,11 @@ class ScheduledEmail {
       dailyLimit: dailyLimit ?? this.dailyLimit,
       lastSentDate: lastSentDate ?? this.lastSentDate,
       recipientStatuses: recipientStatuses ?? this.recipientStatuses,
+      isMerged: isMerged ?? this.isMerged,
+      mergedSourceIds: mergedSourceIds ?? this.mergedSourceIds,
+      mergeContributions: mergeContributions ?? this.mergeContributions,
+      mergeSourceNames: mergeSourceNames ?? this.mergeSourceNames,
+      queuedAfter: clearQueuedAfter ? null : (queuedAfter ?? this.queuedAfter),
     );
   }
 
@@ -84,6 +115,11 @@ class ScheduledEmail {
       'dailyLimit': dailyLimit,
       'lastSentDate': lastSentDate,
       'recipientStatuses': recipientStatuses,
+      'isMerged': isMerged,
+      'mergedSourceIds': mergedSourceIds,
+      'mergeContributions': mergeContributions,
+      'mergeSourceNames': mergeSourceNames,
+      'queuedAfter': queuedAfter,
     };
   }
 
@@ -105,6 +141,21 @@ class ScheduledEmail {
       recipientStatuses: map['recipientStatuses'] != null
           ? Map<String, String>.from(map['recipientStatuses'])
           : {},
+      isMerged: map['isMerged'] ?? false,
+      mergedSourceIds: map['mergedSourceIds'] != null
+          ? List<String>.from(map['mergedSourceIds'])
+          : [],
+      mergeContributions: map['mergeContributions'] != null
+          ? Map<String, int>.from(
+              (map['mergeContributions'] as Map).map(
+                (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+              ),
+            )
+          : {},
+      mergeSourceNames: map['mergeSourceNames'] != null
+          ? Map<String, String>.from(map['mergeSourceNames'])
+          : {},
+      queuedAfter: map['queuedAfter'],
     );
   }
 

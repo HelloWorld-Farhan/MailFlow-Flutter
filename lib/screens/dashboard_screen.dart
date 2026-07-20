@@ -1272,6 +1272,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     }
     await StorageService.saveExtractedEmails(recipients);
 
+    final dailyLimit = _sendType == 'PDF' ? (int.tryParse(_dailyLimitController.text.trim()) ?? 40) : 0;
     final newEmail = ScheduledEmail(
       id: widget.editEmail?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
       senderEmail: sender,
@@ -1282,10 +1283,20 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       scheduledDate: _dateController.text,
       scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
       scheduleName: _scheduleNameController.text.trim(),
-      dailyLimit: _sendType == 'PDF' ? (int.tryParse(_dailyLimitController.text.trim()) ?? 40) : 0,
+      dailyLimit: dailyLimit,
       sentCount: widget.editEmail?.sentCount ?? 0,
       lastSentDate: widget.editEmail?.lastSentDate,
     );
+
+    // ── PDF Conflict check for future dates ────────────────────────────
+    if (_sendType == 'PDF' && widget.editEmail == null) {
+      final conflict = await _checkPdfConflict(newEmail);
+      if (conflict != null && mounted) {
+        // Show resolution dialog — it will handle saving
+        _showConflictDialog(newEmail, conflict);
+        return;
+      }
+    }
 
     if (widget.editEmail != null) {
       await StorageService.updateEmail(newEmail);
@@ -1293,6 +1304,184 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       await StorageService.saveEmail(newEmail);
     }
     if (mounted) Navigator.pop(context);
+  }
+
+  // Returns the conflicting PDF schedule if a future date overlap is found
+  Future<ScheduledEmail?> _checkPdfConflict(ScheduledEmail newPdf) async {
+    final allEmails = await StorageService.getEmails();
+    final startDate = _parseDate(newPdf.scheduledDate);
+    if (startDate == null) return null;
+    final dailyLimit = newPdf.dailyLimit > 0 ? newPdf.dailyLimit : 40;
+    final totalDays = (newPdf.recipients.length / dailyLimit).ceil();
+
+    for (int d = 1; d < totalDays; d++) { // start at day 1 (day 0 already checked by quota badge)
+      final checkDate = startDate.add(Duration(days: d));
+
+      for (final e in allEmails) {
+        if (e.senderEmail != newPdf.senderEmail) continue;
+        if (e.status == 'Success' || e.status == 'Failed' || e.status == 'Paused') continue;
+        if (e.type != 'PDF' && e.type != 'Merged') continue;
+        if (e.id == newPdf.id) continue;
+
+        final eStart = _parseDate(e.scheduledDate);
+        if (eStart == null) continue;
+        final eDailyLimit = e.dailyLimit > 0 ? e.dailyLimit : 40;
+        final eTotalDays = (e.recipients.length / eDailyLimit).ceil();
+        final eEnd = eStart.add(Duration(days: eTotalDays - 1));
+
+        final normalizedCheck = DateTime(checkDate.year, checkDate.month, checkDate.day);
+        final normalizedStart = DateTime(eStart.year, eStart.month, eStart.day);
+        final normalizedEnd = DateTime(eEnd.year, eEnd.month, eEnd.day);
+
+        if ((normalizedCheck.isAfter(normalizedStart) || normalizedCheck.isAtSameMomentAs(normalizedStart)) &&
+            (normalizedCheck.isBefore(normalizedEnd) || normalizedCheck.isAtSameMomentAs(normalizedEnd))) {
+          // Found a conflicting existing PDF on a future date
+          return e;
+        }
+      }
+    }
+    return null;
+  }
+
+  void _showConflictDialog(ScheduledEmail newPdf, ScheduledEmail conflictingPdf) {
+    final conflictName = conflictingPdf.scheduleName?.isNotEmpty == true
+        ? conflictingPdf.scheduleName!
+        : conflictingPdf.subject.isNotEmpty ? conflictingPdf.subject : 'Existing PDF';
+    final newName = newPdf.scheduleName?.isNotEmpty == true
+        ? newPdf.scheduleName!
+        : 'New PDF';
+
+    // Proportional daily merge allocation
+    final remainingA = conflictingPdf.recipients.length - conflictingPdf.sentCount;
+    final remainingB = newPdf.recipients.length;
+    final total = remainingA + remainingB;
+    final dailyLimit = newPdf.dailyLimit > 0 ? newPdf.dailyLimit : 40;
+    final allocA = total > 0 ? (dailyLimit * remainingA / total).floor() : dailyLimit ~/ 2;
+    final allocB = dailyLimit - allocA;
+
+    // Queue: new PDF starts after existing PDF finishes
+    final eStart = _parseDate(conflictingPdf.scheduledDate);
+    final eDailyLimit = conflictingPdf.dailyLimit > 0 ? conflictingPdf.dailyLimit : 40;
+    final eTotalDays = eStart != null ? ((conflictingPdf.recipients.length - conflictingPdf.sentCount) / eDailyLimit).ceil() : 0;
+    final queueStartDate = eStart?.add(Duration(days: eTotalDays));
+    final queueDateStr = queueStartDate != null
+        ? '${queueStartDate.day.toString().padLeft(2,'0')}/${queueStartDate.month.toString().padLeft(2,'0')}/${queueStartDate.year}'
+        : 'After completion';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: Colors.white,
+        title: Row(
+          children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: AppTheme.warningAmber.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.warning_amber_rounded, color: AppTheme.warningAmber, size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text('Schedule Conflict', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 18, color: AppTheme.textDark)),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: AppTheme.errorRed.withOpacity(0.06), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTheme.errorRed.withOpacity(0.2))),
+              child: Text(
+                '"$conflictName" already occupies future dates for ${newPdf.senderEmail}. How would you like to handle "$newName"?',
+                style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textDark),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Option 1: Queue After
+            _ConflictOption(
+              icon: Icons.schedule_rounded,
+              color: AppTheme.primaryBlue,
+              title: 'Queue After',
+              subtitle: '"$newName" will start on $queueDateStr\nafter "$conflictName" finishes.',
+              onTap: () async {
+                Navigator.pop(ctx);
+                // Save new PDF with queuedAfter set to conflicting PDF's ID
+                final queued = newPdf.copyWith(queuedAfter: conflictingPdf.id, scheduledDate: queueDateStr);
+                await StorageService.saveEmail(queued);
+                if (mounted) Navigator.pop(context);
+              },
+            ),
+            const SizedBox(height: 10),
+            // Option 2: Merge
+            _ConflictOption(
+              icon: Icons.merge_rounded,
+              color: AppTheme.successGreen,
+              title: 'Merge PDFs',
+              subtitle: 'Send together: $allocA/day from "$conflictName"\n+ $allocB/day from "$newName" (proportional split)',
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _saveMergedSchedule(newPdf, conflictingPdf, allocA, allocB);
+                if (mounted) Navigator.pop(context);
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveMergedSchedule(
+    ScheduledEmail newPdf,
+    ScheduledEmail existingPdf,
+    int allocExisting,
+    int allocNew,
+  ) async {
+    final existingName = existingPdf.scheduleName?.isNotEmpty == true
+        ? existingPdf.scheduleName!
+        : existingPdf.subject.isNotEmpty ? existingPdf.subject : 'PDF-A';
+    final newName = newPdf.scheduleName?.isNotEmpty == true
+        ? newPdf.scheduleName!
+        : 'PDF-B';
+
+    final dailyLimit = (newPdf.dailyLimit > 0 ? newPdf.dailyLimit : 40);
+
+    // Interleave recipients: existing remaining first, then new
+    final existingRemaining = existingPdf.recipients.skip(existingPdf.sentCount).toList();
+    final allRecipients = [...existingRemaining, ...newPdf.recipients];
+
+    final mergedId = 'merged_${DateTime.now().millisecondsSinceEpoch}';
+    final merged = ScheduledEmail(
+      id: mergedId,
+      senderEmail: newPdf.senderEmail,
+      type: 'PDF',
+      recipients: allRecipients,
+      subject: newPdf.subject,
+      body: newPdf.body,
+      scheduledDate: existingPdf.scheduledDate, // start from existing PDF's date
+      scheduledTime: existingPdf.scheduledTime,
+      scheduleName: 'Merge: $existingName + $newName',
+      dailyLimit: dailyLimit,
+      sentCount: existingPdf.sentCount, // already sent from existing
+      lastSentDate: existingPdf.lastSentDate,
+      isMerged: true,
+      mergedSourceIds: [existingPdf.id, newPdf.id],
+      mergeContributions: {existingPdf.id: allocExisting, newPdf.id: allocNew},
+      mergeSourceNames: {existingPdf.id: existingName, newPdf.id: newName},
+    );
+
+    // Delete original existing PDF (merged into new one)
+    await StorageService.deleteEmail(existingPdf.id);
+    // Save merged schedule
+    await StorageService.saveEmail(merged);
   }
 
   @override
@@ -2333,6 +2522,62 @@ class _AnimatedDropdownPicker extends StatelessWidget {
               ),
             ),
             Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: AppTheme.textLight),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Conflict Resolution Option Widget ────────────────────────────────────────
+class _ConflictOption extends StatefulWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _ConflictOption({required this.icon, required this.color, required this.title, required this.subtitle, required this.onTap});
+  @override
+  State<_ConflictOption> createState() => _ConflictOptionState();
+}
+
+class _ConflictOptionState extends State<_ConflictOption> {
+  bool _hovered = false;
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _hovered = true),
+      onTapUp: (_) => setState(() => _hovered = false),
+      onTapCancel: () => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _hovered ? widget.color.withOpacity(0.12) : widget.color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: widget.color.withOpacity(_hovered ? 0.5 : 0.25)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(color: widget.color.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+              child: Icon(widget.icon, color: widget.color, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.title, style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 14, color: widget.color)),
+                  const SizedBox(height: 3),
+                  Text(widget.subtitle, style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textMid, height: 1.4)),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios_rounded, size: 14, color: widget.color.withOpacity(0.6)),
           ],
         ),
       ),
