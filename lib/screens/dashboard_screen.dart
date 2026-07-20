@@ -78,6 +78,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadHistory();
   }
 
+  Future<void> _stopEmail(ScheduledEmail email) async {
+    await StorageService.updateEmail(email.copyWith(status: 'Paused'));
+    _loadHistory();
+  }
+
+  Future<void> _resumeEmail(ScheduledEmail email) async {
+    final sentCount = email.sentCount;
+    final total = email.recipients.length;
+    final batchSize = email.dailyLimit > 0 ? email.dailyLimit : 40;
+    String newStatus;
+    if (sentCount == 0) {
+      newStatus = 'Scheduled';
+    } else {
+      final daysDone = (sentCount / batchSize).ceil();
+      newStatus = 'Day $daysDone: $sentCount/$total sent';
+    }
+    await StorageService.updateEmail(email.copyWith(status: newStatus));
+    _loadHistory();
+  }
+
   void _showAllContacts() async {
     final contacts = await StorageService.getExtractedEmails();
     if (!mounted) return;
@@ -229,7 +249,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _StatChip(
                     icon: Icons.schedule_rounded,
                     label: 'Scheduled',
-                    value: '${_history.where((e) => e.status == 'Scheduled' || e.status == 'In Process').length}',
+                    value: '${_history.where((e) => e.status == 'Scheduled' || e.status.startsWith('Day') || e.status == 'Paused').length}',
                     color: AppTheme.primaryBlue,
                   ),
                   const SizedBox(width: 12),
@@ -298,6 +318,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               onEdit: () => _openScheduleModal(existingEmail: item),
                               onResend: () => _openResendModal(item),
                               onDelete: () => _deleteEmail(item.id),
+                              onStop: () => _stopEmail(item),
+                              onResume: () => _resumeEmail(item),
                             );
                           },
                           childCount: _history.length,
@@ -392,12 +414,45 @@ class _EmptyState extends StatelessWidget {
 class _EmailCard extends StatelessWidget {
   final ScheduledEmail item;
   final int index;
-  final VoidCallback onTap, onEdit, onResend, onDelete;
-  const _EmailCard({required this.item, required this.index, required this.onTap, required this.onEdit, required this.onResend, required this.onDelete});
+  final VoidCallback onTap, onEdit, onResend, onDelete, onStop, onResume;
+  const _EmailCard({
+    required this.item,
+    required this.index,
+    required this.onTap,
+    required this.onEdit,
+    required this.onResend,
+    required this.onDelete,
+    required this.onStop,
+    required this.onResume,
+  });
+
+  Color _statusColor() {
+    if (item.status == 'Success') return AppTheme.successGreen;
+    if (item.status == 'Failed') return AppTheme.errorRed;
+    if (item.status == 'Paused') return Colors.grey;
+    if (item.status.startsWith('Doing') || item.status.startsWith('Sending') || item.status.startsWith('Day')) return AppTheme.primaryBlue;
+    return AppTheme.warningAmber;
+  }
+
+  String _statusLabel() {
+    if (item.status.startsWith('Day ')) return item.status;
+    if (item.status.startsWith('Doing it...')) return item.status;
+    return item.status;
+  }
+
+  bool get _isActive => item.status.startsWith('Doing') || item.status.startsWith('Sending') || item.status.startsWith('Day ');
+  bool get _isPaused => item.status == 'Paused';
+  bool get _isSuccess => item.status == 'Success';
+  bool get _isFailed => item.status == 'Failed';
+  bool get _isPdfCampaign => item.type == 'PDF' && item.dailyLimit > 0;
 
   @override
   Widget build(BuildContext context) {
-    final bool isSuccess = item.status == 'Success';
+    final clr = _statusColor();
+    final total = item.recipients.length;
+    final sent = item.sentCount;
+    final progress = total > 0 ? sent / total : 0.0;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
@@ -412,99 +467,106 @@ class _EmailCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: AppTheme.divider),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryBlue.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    item.type == 'PDF' ? Icons.picture_as_pdf_rounded : Icons.email_rounded,
-                    color: AppTheme.primaryBlue, size: 22,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        (item.scheduleName != null && item.scheduleName!.isNotEmpty) 
-                          ? item.scheduleName! 
-                          : (item.subject.isNotEmpty ? item.subject : '(No Subject)'),
-                        style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textDark),
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Container(
+                      width: 48, height: 48,
+                      decoration: BoxDecoration(
+                        color: clr.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
+                      child: Icon(
+                        item.type == 'PDF' ? Icons.picture_as_pdf_rounded : Icons.email_rounded,
+                        color: clr, size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(color: AppTheme.primaryBlue.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                            child: Text(item.type, style: const TextStyle(fontFamily: 'Inter', fontSize: 10, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold)),
+                          Text(
+                            (item.scheduleName != null && item.scheduleName!.isNotEmpty)
+                                ? item.scheduleName!
+                                : (item.subject.isNotEmpty ? item.subject : '(No Subject)'),
+                            style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textDark),
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
+                          const SizedBox(height: 4),
+                          Row(children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: AppTheme.primaryBlue.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                              child: Text(item.type, style: const TextStyle(fontFamily: 'Inter', fontSize: 10, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold)),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(child: Text(
                               '${item.recipients.length} recipient${item.recipients.length == 1 ? '' : 's'}  •  ${item.scheduledDate}',
                               style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textLight),
                               maxLines: 1, overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
+                            )),
+                          ]),
+                          const SizedBox(height: 2),
+                          Text(item.scheduledTime, style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textMid)),
                         ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        item.scheduledTime,
-                        style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textMid),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isSuccess ? AppTheme.successGreen.withOpacity(0.10) : AppTheme.warningAmber.withOpacity(0.10),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        item.status,
-                        style: TextStyle(
-                          color: isSuccess ? AppTheme.successGreen : AppTheme.warningAmber,
-                          fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 11,
-                        ),
-                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        if (isSuccess && item.type == 'PDF')
-                          Container(
-                            margin: const EdgeInsets.only(right: 4),
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(color: AppTheme.successGreen.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-                            child: Text('${item.recipients.length}/${item.recipients.length} Sent', style: const TextStyle(color: AppTheme.successGreen, fontSize: 10, fontWeight: FontWeight.bold)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: clr.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        if (!(isSuccess && item.type == 'PDF'))
-                          _ActionBtn(
-                            icon: isSuccess ? Icons.replay_circle_filled_rounded : Icons.edit_rounded, 
-                            color: AppTheme.primaryBlue, 
-                            onTap: isSuccess ? onResend : onEdit
+                          child: Text(
+                            _statusLabel(),
+                            style: TextStyle(color: clr, fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 10),
                           ),
-                        if (!(isSuccess && item.type == 'PDF'))
+                        ),
+                        const SizedBox(height: 8),
+                        Row(children: [
+                          if (_isSuccess || _isFailed)
+                            _ActionBtn(icon: Icons.replay_circle_filled_rounded, color: AppTheme.primaryBlue, onTap: onResend),
+                          if (!_isPdfCampaign && !_isSuccess && !_isFailed && !_isActive && !_isPaused)
+                            _ActionBtn(icon: Icons.edit_rounded, color: AppTheme.primaryBlue, onTap: onEdit),
+                          if (_isPdfCampaign && _isActive)
+                            _ActionBtn(icon: Icons.pause_circle_rounded, color: AppTheme.warningAmber, onTap: onStop),
+                          if (_isPdfCampaign && _isPaused)
+                            _ActionBtn(icon: Icons.play_circle_rounded, color: AppTheme.successGreen, onTap: onResume),
                           const SizedBox(width: 4),
-                        _ActionBtn(icon: Icons.delete_rounded, color: AppTheme.errorRed, onTap: onDelete),
+                          _ActionBtn(icon: Icons.delete_rounded, color: AppTheme.errorRed, onTap: onDelete),
+                        ]),
                       ],
                     ),
                   ],
                 ),
+                // Progress bar for PDF campaigns
+                if (_isPdfCampaign && !_isSuccess && total > 0) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('$sent / $total sent', style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: clr, fontWeight: FontWeight.w600)),
+                      Text('${(progress * 100).toStringAsFixed(1)}%', style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: clr)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      backgroundColor: clr.withOpacity(0.12),
+                      valueColor: AlwaysStoppedAnimation<Color>(clr),
+                      minHeight: 5,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -779,6 +841,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
 
   final _subjectController = TextEditingController();
   final _bodyController = TextEditingController();
+  final _dailyLimitController = TextEditingController(text: '40');
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
   bool _isAm = true;
@@ -809,6 +872,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       } else if (_sendType == 'PDF') {
         _pdfPath = 'Extracted (${e.recipients.length} emails)';
         _pdfEmails = e.recipients;
+        _dailyLimitController.text = e.dailyLimit > 0 ? e.dailyLimit.toString() : '40';
       }
       _scheduleNameController.text = e.scheduleName ?? '';
     } else {
@@ -836,6 +900,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     for (var c in _emailControllers) c.dispose();
     _subjectController.dispose();
     _bodyController.dispose();
+    _dailyLimitController.dispose();
     _dateController.dispose();
     _timeController.dispose();
     super.dispose();
@@ -986,6 +1051,9 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       scheduledDate: _dateController.text,
       scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
       scheduleName: (_sendType == 'Multiple' || _sendType == 'PDF') ? _scheduleNameController.text.trim() : null,
+      dailyLimit: _sendType == 'PDF' ? (int.tryParse(_dailyLimitController.text.trim()) ?? 40) : 0,
+      sentCount: widget.editEmail?.sentCount ?? 0,
+      lastSentDate: widget.editEmail?.lastSentDate,
     );
 
     if (widget.editEmail != null) {
@@ -1240,6 +1308,19 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       ).animate().fade().scale(),
                     ),
                   _buildFieldMsg(_recipientMsg, _isRecipientErr),
+                  if (_sendType == 'PDF') ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _dailyLimitController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Emails per day',
+                        hintText: '40',
+                        prefixIcon: Icon(Icons.speed_rounded, size: 18),
+                        helperText: 'Campaign will send this many emails each day',
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
 
                   // ── Section 4: Email content ───────────────────────
@@ -1515,10 +1596,11 @@ class _ResendModalState extends State<_ResendModal> {
     if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _showMsg('Enter a valid future date and time.'); return; }
     
     final newEmail = widget.email.copyWith(
-      id: DateTime.now().millisecondsSinceEpoch.toString(), // New ID for resend
-      status: 'Pending',
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      status: 'Scheduled',
       scheduledDate: _dateController.text,
       scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
+      sentCount: 0,
     );
     
     await StorageService.saveEmail(newEmail);

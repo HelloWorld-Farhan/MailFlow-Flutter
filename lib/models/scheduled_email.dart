@@ -3,14 +3,17 @@ import 'dart:convert';
 class ScheduledEmail {
   final String id;
   final String senderEmail;
-  final String type; // Single, Multiple, PDF
+  final String type;
   final List<String> recipients;
   final String subject;
   final String body;
-  final String scheduledDate; // DD/MM/YYYY
-  final String scheduledTime; // HH:MM AM/PM
-  final String status; // In Process, Success
-  final String? scheduleName; // Added for Multi/PDF group naming
+  final String scheduledDate;
+  final String scheduledTime;
+  final String status;
+  final String? scheduleName;
+  final int sentCount;
+  final int dailyLimit;
+  final String? lastSentDate;
 
   ScheduledEmail({
     required this.id,
@@ -23,6 +26,9 @@ class ScheduledEmail {
     required this.scheduledTime,
     this.status = 'Scheduled',
     this.scheduleName,
+    this.sentCount = 0,
+    this.dailyLimit = 0,
+    this.lastSentDate,
   });
 
   ScheduledEmail copyWith({
@@ -36,6 +42,9 @@ class ScheduledEmail {
     String? scheduledTime,
     String? status,
     String? scheduleName,
+    int? sentCount,
+    int? dailyLimit,
+    String? lastSentDate,
   }) {
     return ScheduledEmail(
       id: id ?? this.id,
@@ -48,6 +57,9 @@ class ScheduledEmail {
       scheduledTime: scheduledTime ?? this.scheduledTime,
       status: status ?? this.status,
       scheduleName: scheduleName ?? this.scheduleName,
+      sentCount: sentCount ?? this.sentCount,
+      dailyLimit: dailyLimit ?? this.dailyLimit,
+      lastSentDate: lastSentDate ?? this.lastSentDate,
     );
   }
 
@@ -63,6 +75,9 @@ class ScheduledEmail {
       'scheduledTime': scheduledTime,
       'status': status,
       'scheduleName': scheduleName,
+      'sentCount': sentCount,
+      'dailyLimit': dailyLimit,
+      'lastSentDate': lastSentDate,
     };
   }
 
@@ -78,6 +93,9 @@ class ScheduledEmail {
       scheduledTime: map['scheduledTime'],
       status: map['status'] ?? 'Scheduled',
       scheduleName: map['scheduleName'],
+      sentCount: map['sentCount'] ?? 0,
+      dailyLimit: map['dailyLimit'] ?? 0,
+      lastSentDate: map['lastSentDate'],
     );
   }
 
