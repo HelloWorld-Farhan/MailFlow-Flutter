@@ -67,28 +67,7 @@ class StorageService {
     contacts.addAll(newEmails);
     await prefs.setStringList(_contactsKey, contacts.toList());
   }
-  // Templates Storage
-  static const String _templatesKey = 'saved_templates';
 
-  static Future<List<TemplateItem>> getTemplates() async {
-    final prefs = await SharedPreferences.getInstance();
-    List<String> savedList = prefs.getStringList(_templatesKey) ?? [];
-    return savedList.map((jsonStr) => TemplateItem.fromJson(jsonStr)).toList();
-  }
-
-  static Future<void> saveTemplate(TemplateItem template) async {
-    final prefs = await SharedPreferences.getInstance();
-    List<String> savedList = prefs.getStringList(_templatesKey) ?? [];
-    savedList.add(template.toJson());
-    await prefs.setStringList(_templatesKey, savedList);
-  }
-
-  static Future<void> deleteTemplate(String id) async {
-    final templates = await getTemplates();
-    templates.removeWhere((t) => t.id == id);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_templatesKey, templates.map((t) => t.toJson()).toList());
-  }
   // Templates Storage
   static const String _templatesKey = 'saved_templates';
 
