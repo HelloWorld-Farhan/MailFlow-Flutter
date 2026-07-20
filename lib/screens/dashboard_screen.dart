@@ -27,6 +27,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   List<ScheduledEmail> _history = [];
   bool _isLoading = true;
+  int _dailySentCount = 0;
 
   Timer? _refreshTimer;
 
@@ -47,9 +48,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadHistory() async {
     final history = await StorageService.getEmails();
+    final dailySent = await StorageService.getDailySentCount();
     if (!mounted) return;
     setState(() {
       _history = history;
+      _dailySentCount = dailySent;
       _isLoading = false;
     });
   }
@@ -60,7 +63,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       useSafeArea: true,
-      builder: (context) => _ScheduleModal(editEmail: existingEmail),
+      builder: (context) => _ScheduleModal(editEmail: existingEmail, dailySentCount: _dailySentCount),
     ).then((_) => _loadHistory());
   }
 
@@ -261,10 +264,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   _StatChip(
-                    icon: Icons.all_inbox_rounded,
-                    label: 'Total',
-                    value: '${_history.length}',
-                    color: AppTheme.textMid,
+                    icon: Icons.speed_rounded,
+                    label: 'Daily Limit',
+                    value: '$_dailySentCount/50',
+                    color: _dailySentCount >= 50 ? AppTheme.errorRed : AppTheme.textMid,
                   ),
                 ],
               ).animate(delay: 200.ms).fade(duration: 400.ms),
@@ -811,7 +814,8 @@ class _DetailsDialogState extends State<_DetailsDialog> {
 // ─────────────────────────────────────────────────────────────────────────────
 class _ScheduleModal extends StatefulWidget {
   final ScheduledEmail? editEmail;
-  const _ScheduleModal({this.editEmail});
+  final int dailySentCount;
+  const _ScheduleModal({this.editEmail, this.dailySentCount = 0});
 
   @override
   State<_ScheduleModal> createState() => _ScheduleModalState();
@@ -1050,7 +1054,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       body: _useSavedFormat ? (_selectedBody?.content ?? '') : _bodyController.text,
       scheduledDate: _dateController.text,
       scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
-      scheduleName: (_sendType == 'Multiple' || _sendType == 'PDF') ? _scheduleNameController.text.trim() : null,
+      scheduleName: _scheduleNameController.text.trim(),
       dailyLimit: _sendType == 'PDF' ? (int.tryParse(_dailyLimitController.text.trim()) ?? 40) : 0,
       sentCount: widget.editEmail?.sentCount ?? 0,
       lastSentDate: widget.editEmail?.lastSentDate,
@@ -1386,39 +1390,67 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     ),
                     _buildFieldMsg(_bodyMsg, _isBodyErr),
                   ] else ...[
-                    DropdownButtonFormField<TemplateItem>(
-                      decoration: const InputDecoration(
-                        hintText: 'Select Subject',
-                        prefixIcon: Icon(Icons.subject_rounded, size: 18),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.bgSurface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppTheme.divider),
                       ),
-                      dropdownColor: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      isExpanded: true,
-                      value: _selectedSubject,
-                      items: _savedSubjects.map((s) => DropdownMenuItem(
-                        value: s,
-                        child: Text(s.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
-                      )).toList(),
-                      onChanged: (v) => setState(() => _selectedSubject = v),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.subject_rounded, size: 18, color: AppTheme.textLight),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<TemplateItem>(
+                                hint: const Text('Select Subject', style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid)),
+                                dropdownColor: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                isExpanded: true,
+                                value: _selectedSubject,
+                                items: _savedSubjects.map((s) => DropdownMenuItem(
+                                  value: s,
+                                  child: Text(s.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
+                                )).toList(),
+                                onChanged: (v) => setState(() => _selectedSubject = v),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     _buildFieldMsg(_subjectMsg, _isSubjectErr),
                     const SizedBox(height: 10),
-                    DropdownButtonFormField<TemplateItem>(
-                      decoration: const InputDecoration(
-                        hintText: 'Select Body',
-                        prefixIcon: Icon(Icons.edit_note_rounded, size: 18),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.bgSurface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppTheme.divider),
                       ),
-                      dropdownColor: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      isExpanded: true,
-                      value: _selectedBody,
-                      items: _savedBodies.map((b) => DropdownMenuItem(
-                        value: b,
-                        child: Text(b.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
-                      )).toList(),
-                      onChanged: (v) => setState(() => _selectedBody = v),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.edit_note_rounded, size: 18, color: AppTheme.textLight),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<TemplateItem>(
+                                hint: const Text('Select Body', style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid)),
+                                dropdownColor: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                isExpanded: true,
+                                value: _selectedBody,
+                                items: _savedBodies.map((b) => DropdownMenuItem(
+                                  value: b,
+                                  child: Text(b.name, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark), overflow: TextOverflow.ellipsis),
+                                )).toList(),
+                                onChanged: (v) => setState(() => _selectedBody = v),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     _buildFieldMsg(_bodyMsg, _isBodyErr),
                   ],
@@ -1478,17 +1510,30 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   const SizedBox(height: 28),
 
                   // Submit
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton(
-                      onPressed: _submit,
-                      child: Text(
-                        widget.editEmail != null ? 'Update Schedule' : 'Save & Schedule',
-                        style: const TextStyle(fontFamily: 'Outfit', fontSize: 17, fontWeight: FontWeight.w700),
+                  if (widget.dailySentCount >= 50)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(color: AppTheme.errorRed.withOpacity(0.1), borderRadius: BorderRadius.circular(16)),
+                      child: const Center(
+                        child: Text(
+                          'Daily limit 50 reached. Try again tomorrow.',
+                          style: TextStyle(color: AppTheme.errorRed, fontFamily: 'Inter', fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: ElevatedButton(
+                        onPressed: _submit,
+                        child: Text(
+                          widget.editEmail != null ? 'Update Schedule' : 'Save & Schedule',
+                          style: const TextStyle(fontFamily: 'Outfit', fontSize: 17, fontWeight: FontWeight.w700),
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
