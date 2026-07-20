@@ -40,7 +40,7 @@ class _EmailLimitScreenState extends State<EmailLimitScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bgLight,
+      backgroundColor: AppTheme.bgSurface,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -139,7 +139,7 @@ class _EmailLimitScreenState extends State<EmailLimitScreen> {
                           child: LinearProgressIndicator(
                             value: progress,
                             minHeight: 8,
-                            backgroundColor: AppTheme.bgLight,
+                            backgroundColor: AppTheme.bgSurface,
                             valueColor: AlwaysStoppedAnimation<Color>(limitReached ? AppTheme.errorRed : AppTheme.primaryBlue),
                           ),
                         ),

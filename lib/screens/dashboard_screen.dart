@@ -28,7 +28,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   List<ScheduledEmail> _history = [];
   bool _isLoading = true;
-  int _dailySentCount = 0;
+  int _totalDailySent = 0;
 
   Timer? _refreshTimer;
 
@@ -49,11 +49,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadHistory() async {
     final history = await StorageService.getEmails();
-    final dailySent = await StorageService.getDailySentCount();
+    final limitsMap = await StorageService.getAllDailyLimits();
+    final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
+    
     if (!mounted) return;
     setState(() {
       _history = history;
-      _dailySentCount = dailySent;
+      _totalDailySent = totalSent;
       _isLoading = false;
     });
   }
@@ -294,8 +296,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _StatChip(
                     icon: Icons.speed_rounded,
                     label: 'Daily Limit',
-                    value: '$_dailySentCount/50',
-                    color: _dailySentCount >= 50 ? AppTheme.errorRed : AppTheme.textMid,
+                    value: '$_totalDailySent',
+                    color: AppTheme.textMid,
                   ),
                 ],
               ).animate(delay: 200.ms).fade(duration: 400.ms),
@@ -935,6 +937,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   String? _scheduleNameMsg; bool _isScheduleNameErr = false;
   String? _subjectMsg; bool _isSubjectErr = false;
   String? _bodyMsg; bool _isBodyErr = false;
+  String? _dailyLimitMsg; bool _isDailyLimitErr = false;
   bool _showPdfEmails = false;
   // For inline editing of PDF emails
   final List<TextEditingController> _pdfEmailControllers = [];
@@ -1133,6 +1136,20 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     
     if (_sendType == 'Multiple' || _sendType == 'PDF') {
       if (_scheduleNameController.text.trim().isEmpty) { _showMsg('scheduleName', 'Please provide a schedule name.'); return; }
+    }
+    
+    if (_sendType == 'PDF') {
+      final inputLimit = int.tryParse(_dailyLimitController.text.trim()) ?? 0;
+      if (inputLimit > 50) {
+        setState(() {
+          _dailyLimitMsg = 'Max limit is 50.';
+          _isDailyLimitErr = true;
+        });
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) setState(() { _dailyLimitMsg = null; _isDailyLimitErr = false; });
+        });
+        return;
+      }
     }
     
     if (!_useSavedFormat) {
@@ -1606,9 +1623,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         labelText: 'Emails per day',
                         hintText: '40',
                         prefixIcon: Icon(Icons.speed_rounded, size: 18),
-                        helperText: 'Campaign will send this many emails each day',
+                        helperText: 'Your limit is 50. Campaign will send this many emails each day.',
                       ),
                     ),
+                    _buildFieldMsg(_dailyLimitMsg, _isDailyLimitErr),
                   ],
                   const SizedBox(height: 24),
 
