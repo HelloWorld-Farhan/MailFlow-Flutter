@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../services/storage_service.dart';
-import '../theme.dart';
+import '../theme/app_theme.dart';
 
 class EmailLimitScreen extends StatefulWidget {
   const EmailLimitScreen({Key? key}) : super(key: key);
