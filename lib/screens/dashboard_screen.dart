@@ -1013,18 +1013,46 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       // Count total RECIPIENTS already scheduled for this sender on the chosen date
       int dateTotal = 0;
       if (date.length == 10) {
-        for (final e in allEmails) {
-          if (e.senderEmail != email) continue;
-          if (e.scheduledDate != date) continue;
-          if (e.status == 'Success' || e.status == 'Failed' || e.status == 'Paused') continue;
-          // skip the email being edited
-          if (widget.editEmail != null && e.id == widget.editEmail!.id) continue;
-          if (e.type == 'Single') {
-            dateTotal += 1;
-          } else if (e.type == 'Multiple') {
-            dateTotal += e.recipients.length;
-          } else if (e.type == 'PDF') {
-            dateTotal += (e.dailyLimit > 0 ? e.dailyLimit : 40);
+        final selectedDate = _parseDate(date);
+        if (selectedDate != null) {
+          for (final e in allEmails) {
+            if (e.senderEmail != email) continue;
+            if (e.status == 'Success' || e.status == 'Failed' || e.status == 'Paused') continue;
+            // skip the email being edited
+            if (widget.editEmail != null && e.id == widget.editEmail!.id) continue;
+            
+            final eDate = _parseDate(e.scheduledDate);
+            if (eDate == null) continue;
+
+            if (e.type == 'Single') {
+              if (e.scheduledDate == date) dateTotal += 1;
+            } else if (e.type == 'Multiple') {
+              if (e.scheduledDate == date) dateTotal += e.recipients.length;
+            } else if (e.type == 'PDF') {
+              final dailyLimit = e.dailyLimit > 0 ? e.dailyLimit : 40;
+              final totalEmails = e.recipients.length;
+              if (totalEmails == 0) continue;
+              
+              final daysNeeded = (totalEmails / dailyLimit).ceil();
+              final endDate = eDate.add(Duration(days: daysNeeded - 1));
+              
+              // Normalize dates to remove time parts just in case
+              final sD = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+              final eD = DateTime(eDate.year, eDate.month, eDate.day);
+              final enD = DateTime(endDate.year, endDate.month, endDate.day);
+
+              if ((sD.isAfter(eD) || sD.isAtSameMomentAs(eD)) &&
+                  (sD.isBefore(enD) || sD.isAtSameMomentAs(enD))) {
+                
+                // If it's the very last day, it might only use the remainder
+                if (sD.isAtSameMomentAs(enD)) {
+                  final remainder = totalEmails % dailyLimit;
+                  dateTotal += (remainder == 0 ? dailyLimit : remainder);
+                } else {
+                  dateTotal += dailyLimit;
+                }
+              }
+            }
           }
         }
       }
@@ -1150,6 +1178,16 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     ).animate().fade().slideY(begin: -0.2, end: 0);
   }
 
+  DateTime? _parseDate(String d) {
+    if (d.length != 10) return null;
+    try {
+      int day = int.parse(d.substring(0, 2));
+      int month = int.parse(d.substring(3, 5));
+      int year = int.parse(d.substring(6, 10));
+      return DateTime(year, month, day);
+    } catch (_) { return null; }
+  }
+
   bool _isDateTimeValid(String d, String t, bool am) {
     if (d.length != 10 || t.length != 5) return false;
     try {
@@ -1163,6 +1201,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       return DateTime(year, month, day, hour, minute).isAfter(DateTime.now());
     } catch (_) { return false; }
   }
+
 
   Future<void> _submit() async {
     final sender = _senderController.text.trim();
