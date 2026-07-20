@@ -17,10 +17,20 @@ void callbackDispatcher() {
 class BackgroundDispatcher {
   static Timer? _timer;
   static final Set<String> _activelySending = {};
-  static final GoogleSignIn _googleSignIn = GoogleSignIn(
-    clientId: '787471915530-sg4ul6fm6s1paqabljmksi9c61cf4c77.apps.googleusercontent.com',
-    scopes: ['email', 'https://www.googleapis.com/auth/gmail.send'],
-  );
+
+  // Cache of per-sender GoogleSignIn instances
+  static final Map<String, GoogleSignIn> _signInCache = {};
+
+  static GoogleSignIn _getSignIn(String senderEmail) {
+    if (!_signInCache.containsKey(senderEmail)) {
+      _signInCache[senderEmail] = GoogleSignIn(
+        clientId: '787471915530-sg4ul6fm6s1paqabljmksi9c61cf4c77.apps.googleusercontent.com',
+        scopes: ['email', 'https://www.googleapis.com/auth/gmail.send'],
+        // loginHint tells Google to use this specific account
+      );
+    }
+    return _signInCache[senderEmail]!;
+  }
 
   static void start() {
     print('Starting Background Dispatcher...');
@@ -59,12 +69,38 @@ class BackgroundDispatcher {
 
   static Future<void> _processEmail(ScheduledEmail email) async {
     try {
-      GoogleSignInAccount? account = _googleSignIn.currentUser;
-      account ??= await _googleSignIn.signInSilently();
-      if (account == null) return;
+      // Use a per-sender GoogleSignIn to get the correct account's token
+      final googleSignIn = _getSignIn(email.senderEmail);
+
+      GoogleSignInAccount? account = googleSignIn.currentUser;
+      if (account == null || account.email != email.senderEmail) {
+        // Try silent sign in first
+        account = await googleSignIn.signInSilently();
+      }
+
+      // If silent sign-in gave us wrong account or null, try all cached instances
+      if (account == null || account.email != email.senderEmail) {
+        // Try to find any cached sign-in that has the right email
+        for (final entry in _signInCache.entries) {
+          if (entry.key == email.senderEmail) {
+            final cur = entry.value.currentUser;
+            if (cur != null && cur.email == email.senderEmail) {
+              account = cur;
+              break;
+            }
+          }
+        }
+      }
+
+      if (account == null) {
+        print('Dispatcher: No authenticated account for ${email.senderEmail}');
+        return;
+      }
+
       final auth = await account.authentication;
       final token = auth.accessToken;
       if (token == null) return;
+
       if (email.type == 'Single') await _sendSingle(email, token);
       else if (email.type == 'Multiple') await _sendMultiple(email, token);
       else if (email.type == 'PDF') await _sendPdfBatch(email, token);
@@ -76,7 +112,6 @@ class BackgroundDispatcher {
   static Future<void> _sendSingle(ScheduledEmail email, String token) async {
     if (await StorageService.getDailySentCount(email.senderEmail) >= 50) return;
     final recipient = email.recipients.isNotEmpty ? email.recipients[0] : '';
-    // Mark as in-process
     final statuses = Map<String, String>.from(email.recipientStatuses);
     if (recipient.isNotEmpty) statuses[recipient] = 'inProcess';
     await StorageService.updateEmail(email.copyWith(status: 'Sending...', recipientStatuses: statuses));
@@ -96,7 +131,6 @@ class BackgroundDispatcher {
   static Future<void> _sendMultiple(ScheduledEmail email, String token) async {
     final total = email.recipients.length;
     final statuses = Map<String, String>.from(email.recipientStatuses);
-    // Initialize all as pending
     for (final r in email.recipients) {
       if (!statuses.containsKey(r)) statuses[r] = 'pending';
     }
@@ -127,7 +161,6 @@ class BackgroundDispatcher {
     final today = _todayString();
     int newCount = startIdx;
     final statuses = Map<String, String>.from(email.recipientStatuses);
-    // Initialize new ones as pending
     for (final r in email.recipients) {
       if (!statuses.containsKey(r)) statuses[r] = 'pending';
     }
@@ -186,5 +219,13 @@ class BackgroundDispatcher {
     } catch (e) {
       return false;
     }
+  }
+
+  // Called from UI after auth to cache the signed-in account
+  static void registerSignedInAccount(GoogleSignInAccount account) {
+    final googleSignIn = _getSignIn(account.email);
+    // The account is already in the GoogleSignIn instance after signIn() returns it
+    // We just ensure the entry exists in our cache
+    _signInCache[account.email] = googleSignIn;
   }
 }

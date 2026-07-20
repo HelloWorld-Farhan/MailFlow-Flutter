@@ -14,6 +14,7 @@ import 'settings_screen.dart';
 import 'email_detail_screen.dart';
 import 'email_limit_screen.dart';
 import '../models/template_item.dart';
+import '../services/dispatcher.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DASHBOARD SCREEN
@@ -293,11 +294,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: AppTheme.successGreen,
                   ),
                   const SizedBox(width: 12),
-                  _StatChip(
-                    icon: Icons.speed_rounded,
-                    label: 'Daily Limit',
-                    value: '$_totalDailySent',
-                    color: AppTheme.textMid,
+                  GestureDetector(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmailLimitScreen())),
+                    child: _StatChip(
+                      icon: Icons.speed_rounded,
+                      label: 'Total Per Day',
+                      value: '$_totalDailySent',
+                      color: _totalDailySent >= 150 ? AppTheme.errorRed : (_totalDailySent >= 100 ? AppTheme.warningAmber : AppTheme.textMid),
+                    ),
                   ),
                 ],
               ).animate(delay: 200.ms).fade(duration: 400.ms),
@@ -989,8 +993,15 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   void _onSenderChanged() async {
     final email = _senderController.text.trim();
     if (_isValidEmail(email)) {
-      final count = await StorageService.getDailySentCount(email);
-      if (mounted) setState(() => _currentSenderUsage = count);
+      // Show scheduled emails count for this sender (not sent count)
+      final allEmails = await StorageService.getEmails();
+      final scheduledCount = allEmails.where((e) =>
+        e.senderEmail == email &&
+        e.status != 'Success' &&
+        e.status != 'Failed' &&
+        e.status != 'Paused'
+      ).length;
+      if (mounted) setState(() => _currentSenderUsage = scheduledCount);
     } else {
       if (mounted) setState(() => _currentSenderUsage = 0);
     }
@@ -1015,11 +1026,15 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       return;
     }
     try {
+      // Force sign-out first so user can choose the correct account
+      await _googleSignIn.signOut();
       final account = await _googleSignIn.signIn();
       if (account != null) {
         setState(() { _isAuthenticated = true; _senderController.text = account.email; });
         await StorageService.saveSenderEmail(account.email);
-        _showMsg('sender', 'Authenticated successfully!', isError: false);
+        // Register with dispatcher cache
+        BackgroundDispatcher.registerSignedInAccount(account);
+        _showMsg('sender', 'Authenticated as ${account.email}!', isError: false);
       }
     } catch (_) {
       setState(() { _isAuthenticated = true; _senderController.text = currentEmail; });
@@ -1361,19 +1376,18 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Icon(
-                          _currentSenderUsage >= 50 ? Icons.warning_rounded : Icons.info_outline_rounded, 
+                        const Icon(
+                          Icons.schedule_send_rounded,
                           size: 14, 
-                          color: _currentSenderUsage >= 50 ? AppTheme.errorRed : AppTheme.textMid,
+                          color: AppTheme.textMid,
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          'Daily limit usage: $_currentSenderUsage / 50',
-                          style: TextStyle(
+                          'Scheduled emails from this account: $_currentSenderUsage',
+                          style: const TextStyle(
                             fontFamily: 'Inter', 
                             fontSize: 12, 
-                            fontWeight: _currentSenderUsage >= 50 ? FontWeight.bold : FontWeight.normal,
-                            color: _currentSenderUsage >= 50 ? AppTheme.errorRed : AppTheme.textMid,
+                            color: AppTheme.textMid,
                           ),
                         ),
                       ],
