@@ -417,38 +417,42 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: AppTheme.primaryBlue.withOpacity(0.08),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.mail_outline_rounded, size: 36, color: AppTheme.primaryBlue),
-          ).animate().fade().scale(),
-          const SizedBox(height: 20),
-          const Text(
-            'No emails scheduled yet',
-            style: TextStyle(fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w600, color: AppTheme.textDark),
-          ).animate(delay: 100.ms).fade(),
-          const SizedBox(height: 8),
-          const Text(
-            'Tap the card above to schedule\nyour first automated email',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textLight),
-          ).animate(delay: 200.ms).fade(),
-          const SizedBox(height: 28),
-          ElevatedButton.icon(
-            onPressed: onTap,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Schedule Email'),
-          ).animate(delay: 300.ms).fade().scale(),
-        ],
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppTheme.primaryBlue.withOpacity(0.08),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.mail_outline_rounded, size: 36, color: AppTheme.primaryBlue),
+            ).animate().fade().scale(),
+            const SizedBox(height: 20),
+            const Text(
+              'No emails scheduled yet',
+              style: TextStyle(fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w600, color: AppTheme.textDark),
+            ).animate(delay: 100.ms).fade(),
+            const SizedBox(height: 8),
+            const Text(
+              'Tap the card above to schedule\nyour first automated email',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textLight),
+            ).animate(delay: 200.ms).fade(),
+            const SizedBox(height: 28),
+            ElevatedButton.icon(
+              onPressed: onTap,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Schedule Email'),
+            ).animate(delay: 300.ms).fade().scale(),
+          ],
+        ),
       ),
     );
+
   }
 }
 
