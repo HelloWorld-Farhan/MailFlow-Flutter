@@ -6,8 +6,11 @@ import 'storage_service.dart';
 import 'mail_service.dart';
 import '../models/scheduled_email.dart';
 
+import 'package:flutter/widgets.dart';
+
 @pragma('vm:entry-point')
 void exactAlarmCallback() async {
+  WidgetsFlutterBinding.ensureInitialized();
   await BackgroundDispatcher.checkAndSendEmails();
 }
 
@@ -168,15 +171,21 @@ class BackgroundDispatcher {
     final statuses = Map<String, String>.from(email.recipientStatuses);
     if (recipient.isNotEmpty) statuses[recipient] = 'inProcess';
     await StorageService.updateEmail(email.copyWith(status: 'Sending...', recipientStatuses: statuses));
-    final success = await MailService.sendEmail(emailConfig: email, accessToken: token);
+    
+    String finalStatus = '';
+    final result = await MailService.sendEmailWithReason(emailConfig: email, accessToken: token);
+    final success = result == 'Success';
+    
     if (success) {
       await StorageService.incrementDailySentCount(email.senderEmail);
       if (recipient.isNotEmpty) statuses[recipient] = 'sent';
+      finalStatus = 'Success';
     } else {
       if (recipient.isNotEmpty) statuses[recipient] = 'failed';
+      finalStatus = 'Failed: $result';
     }
     await StorageService.updateEmail(email.copyWith(
-      status: success ? 'Success' : 'Failed',
+      status: finalStatus,
       recipientStatuses: statuses,
     ));
   }
@@ -194,12 +203,15 @@ class BackgroundDispatcher {
       final st = 'Doing it... (' + i.toString() + '/' + total.toString() + ')';
       await StorageService.updateEmail(email.copyWith(status: st, recipientStatuses: Map.from(statuses)));
       final single = email.copyWith(recipients: [recipient]);
-      final success = await MailService.sendEmail(emailConfig: single, accessToken: token);
+      
+      final result = await MailService.sendEmailWithReason(emailConfig: single, accessToken: token);
+      final success = result == 'Success';
+      
       if (success) {
         await StorageService.incrementDailySentCount(email.senderEmail);
         statuses[recipient] = 'sent';
       } else {
-        statuses[recipient] = 'failed';
+        statuses[recipient] = 'failed ($result)';
       }
       if (i < total - 1) await Future.delayed(const Duration(seconds: 5));
     }
@@ -227,12 +239,15 @@ class BackgroundDispatcher {
       final st = 'Doing it... (' + i.toString() + '/' + total.toString() + ')';
       await StorageService.updateEmail(cur.copyWith(status: st, sentCount: i, recipientStatuses: Map.from(statuses)));
       final single = email.copyWith(recipients: [recipient]);
-      final success = await MailService.sendEmail(emailConfig: single, accessToken: token);
+      
+      final result = await MailService.sendEmailWithReason(emailConfig: single, accessToken: token);
+      final success = result == 'Success';
+      
       if (success) {
         await StorageService.incrementDailySentCount(email.senderEmail);
         statuses[recipient] = 'sent';
       } else {
-        statuses[recipient] = 'failed';
+        statuses[recipient] = 'failed ($result)';
       }
       newCount = i + 1;
       if (i < endIdx - 1) await Future.delayed(const Duration(seconds: 5));
