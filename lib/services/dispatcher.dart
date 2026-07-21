@@ -158,22 +158,34 @@ class BackgroundDispatcher {
 
   static Future<void> _processEmail(ScheduledEmail email) async {
     try {
-      final googleSignIn = _getSignIn(email.senderEmail);
+      String? token;
 
+      // Step 1: Try to get token from in-memory cache (works if app is in foreground)
+      final googleSignIn = _getSignIn(email.senderEmail);
       GoogleSignInAccount? account = googleSignIn.currentUser;
-      if (account == null || account.email != email.senderEmail) {
-        account = await googleSignIn.signInSilently();
+      if (account != null && account.email == email.senderEmail) {
+        final auth = await account.authentication;
+        token = auth.accessToken;
+        // Refresh stored token too
+        if (token != null) {
+          await StorageService.saveAccessToken(email.senderEmail, token);
+        }
       }
 
-      // If forceAccountName failed or it still doesn't match, abort to prevent sending from wrong account
-      if (account == null || account.email != email.senderEmail) {
-        print('Dispatcher: Account mismatch or silent login failed for ${email.senderEmail}. Skipping to prevent wrong sender.');
+      // Step 2: If in-memory failed, use the saved token from SharedPreferences
+      // This is the key fix — signInSilently() NEVER works in background isolates
+      if (token == null || token.isEmpty) {
+        token = await StorageService.getAccessToken(email.senderEmail);
+        print('Dispatcher: Using stored token for ${email.senderEmail}: ${token != null ? "found" : "NOT FOUND"}');
+      }
+
+      if (token == null || token.isEmpty) {
+        print('Dispatcher: No token available for ${email.senderEmail}. User must re-authenticate in app.');
+        await StorageService.updateEmail(email.copyWith(
+          status: 'Failed: Please open the app and re-authenticate ${email.senderEmail}',
+        ));
         return;
       }
-
-      final auth = await account.authentication;
-      final token = auth.accessToken;
-      if (token == null) return;
 
       if (email.isMerged) {
         await _sendMergedPdfBatch(email, token);

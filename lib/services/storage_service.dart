@@ -149,4 +149,19 @@ class StorageService {
     await prefs.setString('daily_sent_map', jsonEncode(limits));
     await prefs.setString('daily_sent_date', _todayString());
   }
+
+  // ── OAuth Access Token Storage (per sender) ────────────────────────────
+  // Saved when user signs in via UI, read by background dispatcher.
+  // Key: 'access_token_<email>'
+  static Future<void> saveAccessToken(String email, String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('access_token_$email', token);
+    print('StorageService: Saved access token for $email');
+  }
+
+  static Future<String?> getAccessToken(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    return prefs.getString('access_token_$email');
+  }
 }

@@ -1108,6 +1108,11 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       await _googleSignIn.signOut();
       final account = await _googleSignIn.signIn();
       if (account != null) {
+        // Save the access token immediately so background dispatcher can use it
+        final auth = await account.authentication;
+        if (auth.accessToken != null) {
+          await StorageService.saveAccessToken(account.email, auth.accessToken!);
+        }
         setState(() { _isAuthenticated = true; _senderController.text = account.email; });
         await StorageService.saveSenderEmail(account.email);
         // Register with dispatcher cache
