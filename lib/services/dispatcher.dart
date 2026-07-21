@@ -136,8 +136,13 @@ class BackgroundDispatcher {
     AndroidAlarmManager.cancel(1);
   }
 
+  static bool _isChecking = false;
+
   static Future<void> checkAndSendEmails() async {
-    final emails = await StorageService.getEmails();
+    if (_isChecking) return;
+    _isChecking = true;
+    try {
+      final emails = await StorageService.getEmails();
 
     // ── Stuck Email Watchdog ───────────────────────────────────────────────
     // If an email has been stuck in "Doing" or "Sending" status for more than
@@ -235,6 +240,9 @@ class BackgroundDispatcher {
 
     if (toSend.isNotEmpty) {
       await Future.wait(toSend);
+    }
+    } finally {
+      _isChecking = false;
     }
   }
 
