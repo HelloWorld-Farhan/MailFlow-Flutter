@@ -201,20 +201,34 @@ class BackgroundDispatcher {
     try {
       String? token;
 
-      // Step 1: Try to get token from in-memory cache (works if app is in foreground)
+      // Step 1: Try to get token from in-memory cache or by signing in silently
       final googleSignIn = _getSignIn(email.senderEmail);
       GoogleSignInAccount? account = googleSignIn.currentUser;
-      if (account != null && account.email == email.senderEmail) {
-        final auth = await account.authentication;
-        token = auth.accessToken;
-        // Refresh stored token too
-        if (token != null) {
-          await StorageService.saveAccessToken(email.senderEmail, token);
+      
+      if (account == null) {
+        try {
+          print('Dispatcher: currentUser is null, attempting signInSilently for ${email.senderEmail}');
+          account = await googleSignIn.signInSilently();
+        } catch (e) {
+          print('Dispatcher: signInSilently failed: $e');
         }
       }
 
-      // Step 2: If in-memory failed, use the saved token from SharedPreferences
-      // This is the key fix — signInSilently() NEVER works in background isolates
+      if (account != null && account.email == email.senderEmail) {
+        try {
+          final auth = await account.authentication;
+          token = auth.accessToken;
+          // Refresh stored token too
+          if (token != null) {
+            await StorageService.saveAccessToken(email.senderEmail, token);
+            print('Dispatcher: Token refreshed via signInSilently');
+          }
+        } catch (e) {
+          print('Dispatcher: account.authentication failed: $e');
+        }
+      }
+
+      // Step 2: If in-memory/silent failed, use the saved token from SharedPreferences
       if (token == null || token.isEmpty) {
         token = await StorageService.getAccessToken(email.senderEmail);
         print('Dispatcher: Using stored token for ${email.senderEmail}: ${token != null ? "found" : "NOT FOUND"}');
