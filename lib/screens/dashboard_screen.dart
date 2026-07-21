@@ -2122,8 +2122,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       Expanded(
                         child: GestureDetector(
                           onTap: () {
-                            FocusScope.of(context).unfocus();
-                            setState(() { _useSavedFormat = false; });
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            Future.delayed(const Duration(milliseconds: 50), () {
+                              if (mounted) setState(() { _useSavedFormat = false; });
+                            });
                           },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 250),
@@ -2141,8 +2143,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       Expanded(
                         child: GestureDetector(
                           onTap: () {
-                            FocusScope.of(context).unfocus();
-                            setState(() { _useSavedFormat = true; });
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            Future.delayed(const Duration(milliseconds: 50), () {
+                              if (mounted) setState(() { _useSavedFormat = true; });
+                            });
                           },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 250),

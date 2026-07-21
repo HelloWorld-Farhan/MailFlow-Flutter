@@ -191,8 +191,44 @@ class BackgroundDispatcher {
           if (email.lastSentDate == today) continue;
         }
         _activelySending.add(email.id);
+
+        // Fetch token sequentially to avoid native GoogleSignInClient race condition
+        String? token;
+        try {
+          final googleSignIn = _getSignIn(email.senderEmail);
+          GoogleSignInAccount? account = googleSignIn.currentUser;
+          if (account == null) {
+            print('Dispatcher: currentUser is null, attempting signInSilently for ${email.senderEmail}');
+            account = await googleSignIn.signInSilently();
+          }
+          if (account != null && account.email == email.senderEmail) {
+            final auth = await account.authentication;
+            token = auth.accessToken;
+            if (token != null) {
+              await StorageService.saveAccessToken(email.senderEmail, token);
+              print('Dispatcher: Token refreshed via signInSilently');
+            }
+          }
+        } catch (e) {
+          print('Dispatcher: signInSilently failed: $e');
+        }
+
+        if (token == null || token.isEmpty) {
+          token = await StorageService.getAccessToken(email.senderEmail);
+          print('Dispatcher: Using stored token for ${email.senderEmail}: ${token != null ? "found" : "NOT FOUND"}');
+        }
+
+        if (token == null || token.isEmpty) {
+          print('Dispatcher: No token available for ${email.senderEmail}. User must re-authenticate in app.');
+          await StorageService.updateEmail(email.copyWith(
+            status: 'Failed: Please open the app and re-authenticate ${email.senderEmail}',
+          ));
+          _activelySending.remove(email.id);
+          continue;
+        }
+
         toSend.add(
-          _processEmail(email).then((_) => _activelySending.remove(email.id))
+          _processEmailWithToken(email, token).then((_) => _activelySending.remove(email.id))
         );
       }
     }
@@ -202,51 +238,8 @@ class BackgroundDispatcher {
     }
   }
 
-  static Future<void> _processEmail(ScheduledEmail email) async {
+  static Future<void> _processEmailWithToken(ScheduledEmail email, String token) async {
     try {
-      String? token;
-
-      // Step 1: Try to get token from in-memory cache or by signing in silently
-      final googleSignIn = _getSignIn(email.senderEmail);
-      GoogleSignInAccount? account = googleSignIn.currentUser;
-      
-      if (account == null) {
-        try {
-          print('Dispatcher: currentUser is null, attempting signInSilently for ${email.senderEmail}');
-          account = await googleSignIn.signInSilently();
-        } catch (e) {
-          print('Dispatcher: signInSilently failed: $e');
-        }
-      }
-
-      if (account != null && account.email == email.senderEmail) {
-        try {
-          final auth = await account.authentication;
-          token = auth.accessToken;
-          // Refresh stored token too
-          if (token != null) {
-            await StorageService.saveAccessToken(email.senderEmail, token);
-            print('Dispatcher: Token refreshed via signInSilently');
-          }
-        } catch (e) {
-          print('Dispatcher: account.authentication failed: $e');
-        }
-      }
-
-      // Step 2: If in-memory/silent failed, use the saved token from SharedPreferences
-      if (token == null || token.isEmpty) {
-        token = await StorageService.getAccessToken(email.senderEmail);
-        print('Dispatcher: Using stored token for ${email.senderEmail}: ${token != null ? "found" : "NOT FOUND"}');
-      }
-
-      if (token == null || token.isEmpty) {
-        print('Dispatcher: No token available for ${email.senderEmail}. User must re-authenticate in app.');
-        await StorageService.updateEmail(email.copyWith(
-          status: 'Failed: Please open the app and re-authenticate ${email.senderEmail}',
-        ));
-        return;
-      }
-
       if (email.isMerged) {
         await _sendMergedPdfBatch(email, token);
       } else if (email.type == 'Single') {
