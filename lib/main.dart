@@ -4,13 +4,13 @@ import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 import 'services/dispatcher.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
   ));
-  BackgroundDispatcher.start();
+  await BackgroundDispatcher.start();
   runApp(const MailFlowApp());
 }
 

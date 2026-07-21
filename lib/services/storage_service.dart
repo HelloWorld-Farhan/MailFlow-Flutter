@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scheduled_email.dart';
 import '../models/template_item.dart';
+import 'dispatcher.dart';
 
 class StorageService {
   static const String _emailsKey = 'scheduled_emails_history';
@@ -11,6 +12,9 @@ class StorageService {
     List<String> savedList = prefs.getStringList(_emailsKey) ?? [];
     savedList.add(email.toJson());
     await prefs.setStringList(_emailsKey, savedList);
+    
+    // Automatically schedule exact alarm for this new email
+    BackgroundDispatcher.scheduleExactAlarmForEmail(email);
   }
 
   static Future<List<ScheduledEmail>> getEmails() async {

@@ -1,17 +1,14 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:workmanager/workmanager.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'storage_service.dart';
 import 'mail_service.dart';
 import '../models/scheduled_email.dart';
 
 @pragma('vm:entry-point')
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    await BackgroundDispatcher.checkAndSendEmails();
-    return Future.value(true);
-  });
+void exactAlarmCallback() async {
+  await BackgroundDispatcher.checkAndSendEmails();
 }
 
 class BackgroundDispatcher {
@@ -26,24 +23,71 @@ class BackgroundDispatcher {
       _signInCache[senderEmail] = GoogleSignIn(
         clientId: '787471915530-sg4ul6fm6s1paqabljmksi9c61cf4c77.apps.googleusercontent.com',
         scopes: ['email', 'https://www.googleapis.com/auth/gmail.send'],
+        forceAccountName: senderEmail,
       );
     }
     return _signInCache[senderEmail]!;
   }
 
-  static void start() {
+  static Future<void> start() async {
     print('Starting Background Dispatcher...');
-    Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
-    Workmanager().registerPeriodicTask('1', 'emailDispatcher', frequency: const Duration(minutes: 15));
+    await AndroidAlarmManager.initialize();
+    
+    // Register a periodic fallback
+    await AndroidAlarmManager.periodic(
+      const Duration(minutes: 15),
+      1,
+      exactAlarmCallback,
+      wakeup: true,
+      rescheduleOnReboot: true,
+    );
+
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 30), (timer) async {
       await checkAndSendEmails();
     });
   }
 
+  static void scheduleExactAlarm(DateTime time, int id) {
+    AndroidAlarmManager.oneShotAt(
+      time,
+      id,
+      exactAlarmCallback,
+      exact: true,
+      wakeup: true,
+      rescheduleOnReboot: true,
+    );
+  }
+
+  static void scheduleExactAlarmForEmail(ScheduledEmail email) {
+    try {
+      final parts = email.scheduledDate.split('/');
+      if (parts.length == 3) {
+        final day = int.parse(parts[0]);
+        final month = int.parse(parts[1]);
+        final year = int.parse(parts[2]);
+        
+        final tParts = email.scheduledTime.split(' ');
+        final hm = tParts[0].split(':');
+        int hour = int.parse(hm[0]);
+        final min = int.parse(hm[1]);
+        if (tParts[1] == 'PM' && hour < 12) hour += 12;
+        if (tParts[1] == 'AM' && hour == 12) hour = 0;
+
+        final dt = DateTime(year, month, day, hour, min);
+        // Use a hash of the id for the alarm ID
+        final alarmId = email.id.hashCode.abs();
+        scheduleExactAlarm(dt, alarmId);
+        print('Scheduled exact alarm for $dt (ID: $alarmId)');
+      }
+    } catch (e) {
+      print('Failed to schedule exact alarm: $e');
+    }
+  }
+
   static void stop() {
     _timer?.cancel();
-    Workmanager().cancelAll();
+    AndroidAlarmManager.cancel(1);
   }
 
   static Future<void> checkAndSendEmails() async {
@@ -94,20 +138,9 @@ class BackgroundDispatcher {
         account = await googleSignIn.signInSilently();
       }
 
+      // If forceAccountName failed or it still doesn't match, abort to prevent sending from wrong account
       if (account == null || account.email != email.senderEmail) {
-        for (final entry in _signInCache.entries) {
-          if (entry.key == email.senderEmail) {
-            final cur = entry.value.currentUser;
-            if (cur != null && cur.email == email.senderEmail) {
-              account = cur;
-              break;
-            }
-          }
-        }
-      }
-
-      if (account == null) {
-        print('Dispatcher: No authenticated account for ${email.senderEmail}');
+        print('Dispatcher: Account mismatch or silent login failed for ${email.senderEmail}. Skipping to prevent wrong sender.');
         return;
       }
 

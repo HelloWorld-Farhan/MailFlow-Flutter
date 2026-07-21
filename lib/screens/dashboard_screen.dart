@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -36,10 +37,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _checkPermissions();
     _loadHistory();
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _loadHistory();
     });
+  }
+
+  Future<void> _checkPermissions() async {
+    if (await Permission.scheduleExactAlarm.isDenied) {
+      await Permission.scheduleExactAlarm.request();
+    }
   }
 
   @override
