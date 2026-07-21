@@ -36,9 +36,9 @@ class BackgroundDispatcher {
     print('Starting Background Dispatcher...');
     await AndroidAlarmManager.initialize();
     
-    // Register a periodic fallback
+    // Register a periodic fallback every 5 minutes to catch any missed alarms
     await AndroidAlarmManager.periodic(
-      const Duration(minutes: 15),
+      const Duration(minutes: 5),
       1,
       exactAlarmCallback,
       wakeup: true,
@@ -46,9 +46,12 @@ class BackgroundDispatcher {
     );
 
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+    // Poll every 5 seconds so the app reacts within 5 seconds of the scheduled time
+    _timer = Timer.periodic(const Duration(seconds: 5), (timer) async {
       await checkAndSendEmails();
     });
+    // Also run immediately on start
+    await checkAndSendEmails();
   }
 
   static void scheduleExactAlarm(DateTime time, int id) {
@@ -78,8 +81,18 @@ class BackgroundDispatcher {
         if (tParts[1] == 'AM' && hour == 12) hour = 0;
 
         final dt = DateTime(year, month, day, hour, min);
-        // Use a hash of the id for the alarm ID
         final alarmId = email.id.hashCode.abs();
+
+        // Schedule a warm-up alarm 2 minutes BEFORE the actual send time
+        // so the system is alive and ready exactly at send time.
+        final warmUpTime = dt.subtract(const Duration(minutes: 2));
+        if (warmUpTime.isAfter(DateTime.now())) {
+          // Warm-up alarm uses a different ID (alarmId + offset)
+          scheduleExactAlarm(warmUpTime, (alarmId + 9999999) % 0x7FFFFFFF);
+          print('Scheduled warm-up alarm for $warmUpTime');
+        }
+
+        // Main alarm at the exact send time
         scheduleExactAlarm(dt, alarmId);
         print('Scheduled exact alarm for $dt (ID: $alarmId)');
       }
@@ -95,6 +108,9 @@ class BackgroundDispatcher {
 
   static Future<void> checkAndSendEmails() async {
     final emails = await StorageService.getEmails();
+    // Collect all emails that are ready to send simultaneously
+    final List<Future<void>> toSend = [];
+
     for (final email in emails) {
       if (email.status == 'Success') continue;
       if (email.status == 'Failed') continue;
@@ -127,8 +143,16 @@ class BackgroundDispatcher {
           if (email.lastSentDate == today) continue;
         }
         _activelySending.add(email.id);
-        _processEmail(email).then((_) => _activelySending.remove(email.id));
+        // Add to parallel list — all ready emails start at the same time
+        toSend.add(
+          _processEmail(email).then((_) => _activelySending.remove(email.id))
+        );
       }
+    }
+
+    // Launch all ready emails simultaneously
+    if (toSend.isNotEmpty) {
+      await Future.wait(toSend);
     }
   }
 
@@ -200,7 +224,8 @@ class BackgroundDispatcher {
       if (await StorageService.getDailySentCount(email.senderEmail) >= 50) break;
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
-      final st = 'Doing it... (' + i.toString() + '/' + total.toString() + ')';
+      // Show (sent+1)/total so user sees the current email being sent
+      final st = 'Doing it... (${i + 1}/$total)';
       await StorageService.updateEmail(email.copyWith(status: st, recipientStatuses: Map.from(statuses)));
       final single = email.copyWith(recipients: [recipient]);
       
@@ -212,7 +237,7 @@ class BackgroundDispatcher {
         statuses[recipient] = 'sent';
       } else {
         statuses[recipient] = 'failed ($result)';
-      }      // Delay removed for continuous sending
+      }
     }
     await StorageService.updateEmail(email.copyWith(status: 'Success', recipientStatuses: Map.from(statuses)));
   }
@@ -235,8 +260,10 @@ class BackgroundDispatcher {
       if (cur.status == 'Paused') return;
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
-      final st = 'Doing it... (' + i.toString() + '/' + total.toString() + ')';
-      await StorageService.updateEmail(cur.copyWith(status: st, sentCount: i, recipientStatuses: Map.from(statuses)));
+      newCount = i + 1;
+      // Show (sent+1)/total so user sees real-time progress
+      final st = 'Doing it... ($newCount/$total)';
+      await StorageService.updateEmail(cur.copyWith(status: st, sentCount: newCount, recipientStatuses: Map.from(statuses)));
       final single = email.copyWith(recipients: [recipient]);
       
       final result = await MailService.sendEmailWithReason(emailConfig: single, accessToken: token);
@@ -248,7 +275,6 @@ class BackgroundDispatcher {
       } else {
         statuses[recipient] = 'failed ($result)';
       }
-      newCount = i + 1;      // Delay removed for continuous sending
     }
     final latestList = await StorageService.getEmails();
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
@@ -295,10 +321,12 @@ class BackgroundDispatcher {
       if (cur.status == 'Paused') return;
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
-      final st = 'Merge Day ${(i / dailyLimit).ceil() + 1}: $i/$total sent';
+      newCount = i + 1;
+      // Show real-time counter (sent+1)/total
+      final st = 'Merge Day ${(newCount / dailyLimit).ceil()}: $newCount/$total sent';
       await StorageService.updateEmail(cur.copyWith(
         status: st,
-        sentCount: i,
+        sentCount: newCount,
         recipientStatuses: Map.from(statuses),
       ));
       final single = email.copyWith(recipients: [recipient]);
@@ -309,7 +337,6 @@ class BackgroundDispatcher {
       } else {
         statuses[recipient] = 'failed';
       }
-      newCount = i + 1;      // Delay removed for continuous sending
     }
     final latestList = await StorageService.getEmails();
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
