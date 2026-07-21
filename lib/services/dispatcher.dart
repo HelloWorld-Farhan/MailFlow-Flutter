@@ -284,17 +284,25 @@ class BackgroundDispatcher {
 
   static Future<void> _sendMultiple(ScheduledEmail email, String token) async {
     final total = email.recipients.length;
+    final startIdx = email.sentCount;
+    final today = _todayString();
+    int newCount = startIdx;
     final statuses = Map<String, String>.from(email.recipientStatuses);
-    int sentThisRun = 0;
     for (final r in email.recipients) {
       if (!statuses.containsKey(r)) statuses[r] = 'pending';
     }
-    for (int i = 0; i < total; i++) {
+    for (int i = startIdx; i < total; i++) {
       if (await _getDailyCount(email.senderEmail) >= 50) break;
+      final latestList = await StorageService.getEmails();
+      final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
+      if (cur.status == 'Paused') return;
+      
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
-      final st = 'Doing it... (${i + 1}/$total)';
-      await StorageService.updateEmail(email.copyWith(status: st, recipientStatuses: Map.from(statuses)));
+      newCount = i + 1;
+      final st = 'Doing it... ($newCount/$total)';
+      await StorageService.updateEmail(cur.copyWith(status: st, sentCount: newCount, recipientStatuses: Map.from(statuses)));
+      
       final single = email.copyWith(recipients: [recipient]);
       
       final result = await MailService.sendEmailWithReason(emailConfig: single, accessToken: token);
@@ -303,20 +311,30 @@ class BackgroundDispatcher {
       if (success) {
         await _incrementDailyCount(email.senderEmail);
         statuses[recipient] = 'sent';
-        sentThisRun++;
       } else {
         statuses[recipient] = 'failed ($result)';
       }
-      // Anti-spam delay between each email (if user configured it)
+      
+      // Anti-spam delay between each email
       if (email.delayMinutes > 0 && i < total - 1) {
         await Future.delayed(Duration(minutes: email.delayMinutes));
       }
     }
-    final allSent = statuses.values.every((s) => s == 'sent');
-    await StorageService.updateEmail(email.copyWith(
-      status: allSent ? 'Success' : 'Day 1: $sentThisRun/$total sent',
-      recipientStatuses: Map.from(statuses),
-    ));
+    
+    final latestList = await StorageService.getEmails();
+    final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
+    if (cur.status == 'Paused') return;
+
+    if (newCount >= total) {
+      await StorageService.updateEmail(cur.copyWith(status: 'Success', sentCount: newCount, lastSentDate: today, recipientStatuses: Map.from(statuses)));
+    } else {
+      await StorageService.updateEmail(cur.copyWith(
+        status: 'Limit/Paused: $newCount/$total sent',
+        sentCount: newCount,
+        lastSentDate: today,
+        recipientStatuses: Map.from(statuses),
+      ));
+    }
   }
 
   static Future<void> _sendPdfBatch(ScheduledEmail email, String token) async {
