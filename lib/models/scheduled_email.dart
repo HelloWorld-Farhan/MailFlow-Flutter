@@ -33,6 +33,9 @@ class ScheduledEmail {
   /// 0 = no delay (send immediately), 1-5 = wait X minutes between each email
   final int delayMinutes;
 
+  /// Epoch timestamp of last status update (used by watchdog)
+  final int lastUpdateEpoch;
+
   ScheduledEmail({
     required this.id,
     required this.senderEmail,
@@ -54,10 +57,12 @@ class ScheduledEmail {
     Map<String, String>? mergeSourceNames,
     this.queuedAfter,
     this.delayMinutes = 0,
+    int? lastUpdateEpoch,
   })  : recipientStatuses = recipientStatuses ?? {},
         mergedSourceIds = mergedSourceIds ?? [],
         mergeContributions = mergeContributions ?? {},
-        mergeSourceNames = mergeSourceNames ?? {};
+        mergeSourceNames = mergeSourceNames ?? {},
+        lastUpdateEpoch = lastUpdateEpoch ?? DateTime.now().millisecondsSinceEpoch;
 
   ScheduledEmail copyWith({
     String? id,
@@ -81,6 +86,8 @@ class ScheduledEmail {
     String? queuedAfter,
     bool clearQueuedAfter = false,
     int? delayMinutes,
+    int? lastUpdateEpoch,
+    bool autoUpdateEpoch = true,
   }) {
     return ScheduledEmail(
       id: id ?? this.id,
@@ -103,6 +110,7 @@ class ScheduledEmail {
       mergeSourceNames: mergeSourceNames ?? this.mergeSourceNames,
       queuedAfter: clearQueuedAfter ? null : (queuedAfter ?? this.queuedAfter),
       delayMinutes: delayMinutes ?? this.delayMinutes,
+      lastUpdateEpoch: autoUpdateEpoch ? DateTime.now().millisecondsSinceEpoch : (lastUpdateEpoch ?? this.lastUpdateEpoch),
     );
   }
 
@@ -128,6 +136,7 @@ class ScheduledEmail {
       'mergeSourceNames': mergeSourceNames,
       'queuedAfter': queuedAfter,
       'delayMinutes': delayMinutes,
+      'lastUpdateEpoch': lastUpdateEpoch,
     };
   }
 
@@ -165,6 +174,7 @@ class ScheduledEmail {
           : {},
       queuedAfter: map['queuedAfter'],
       delayMinutes: map['delayMinutes'] ?? 0,
+      lastUpdateEpoch: map['lastUpdateEpoch'],
     );
   }
 

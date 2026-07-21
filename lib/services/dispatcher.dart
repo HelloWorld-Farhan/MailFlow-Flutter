@@ -142,13 +142,18 @@ class BackgroundDispatcher {
     // ── Stuck Email Watchdog ───────────────────────────────────────────────
     // If an email has been stuck in "Doing" or "Sending" status for more than
     // 10 minutes (app was killed mid-send), auto-reset it so it can retry.
+    final nowEpoch = DateTime.now().millisecondsSinceEpoch;
     for (final email in emails) {
       final isStuck = email.status.startsWith('Doing') || email.status.startsWith('Sending');
-      if (isStuck && !_activelySending.contains(email.id)) {
-        // This email is marked as sending but we are NOT actively processing it
-        // — it got stuck after a crash or force-close. Reset it.
-        print('Watchdog: Resetting stuck email ${email.id} (status: ${email.status})');
-        await StorageService.updateEmail(email.copyWith(status: 'Scheduled'));
+      
+      if (isStuck) {
+        final timeSinceLastUpdate = nowEpoch - email.lastUpdateEpoch;
+        final isOrphaned = timeSinceLastUpdate > 10 * 60 * 1000; // 10 minutes
+
+        if (isOrphaned) {
+          print('Watchdog: Resetting stuck email ${email.id} (status: ${email.status}, inactive for ${timeSinceLastUpdate / 1000}s)');
+          await StorageService.updateEmail(email.copyWith(status: 'Scheduled'));
+        }
       }
     }
 
