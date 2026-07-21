@@ -1508,15 +1508,19 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       mergeSourceNames: {existingPdf.id: existingName, newPdf.id: newName},
     );
 
-    // Delete original existing PDF (merged into new one)
+    // Delete BOTH original PDFs — only the merged campaign should remain
     await StorageService.deleteEmail(existingPdf.id);
+    await StorageService.deleteEmail(newPdf.id);
     // Save merged schedule
     await StorageService.saveEmail(merged);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -2117,7 +2121,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() { _useSavedFormat = false; }),
+                          onTap: () {
+                            FocusScope.of(context).unfocus();
+                            setState(() { _useSavedFormat = false; });
+                          },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 250),
                             padding: const EdgeInsets.symmetric(vertical: 10),
@@ -2133,7 +2140,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() { _useSavedFormat = true; }),
+                          onTap: () {
+                            FocusScope.of(context).unfocus();
+                            setState(() { _useSavedFormat = true; });
+                          },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 250),
                             padding: const EdgeInsets.symmetric(vertical: 10),
@@ -2277,7 +2287,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
           ),
         ],
       ),
-    );
+      ), // closes GestureDetector child: Container
+    ); // closes GestureDetector
   }
 }
 
@@ -2614,7 +2625,10 @@ class _AnimatedDropdownPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _showPicker(context),
+      onTap: () {
+        FocusScope.of(context).unfocus();
+        _showPicker(context);
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
