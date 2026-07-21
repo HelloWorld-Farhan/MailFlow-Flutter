@@ -18,6 +18,36 @@ class BackgroundDispatcher {
   static Timer? _timer;
   static final Set<String> _activelySending = {};
 
+  // In-memory daily sent count cache — prevents race conditions when two
+  // senders run in parallel and both read/write SharedPreferences simultaneously.
+  static final Map<String, int> _dailyCountCache = {};
+  static String _cacheDate = '';
+
+  static Future<int> _getDailyCount(String senderEmail) async {
+    final today = _todayString();
+    if (_cacheDate != today) {
+      // New day — clear the cache
+      _dailyCountCache.clear();
+      _cacheDate = today;
+    }
+    if (_dailyCountCache.containsKey(senderEmail)) {
+      return _dailyCountCache[senderEmail]!;
+    }
+    final count = await StorageService.getDailySentCount(senderEmail);
+    _dailyCountCache[senderEmail] = count;
+    return count;
+  }
+
+  static Future<void> _incrementDailyCount(String senderEmail) async {
+    final today = _todayString();
+    if (_cacheDate != today) {
+      _dailyCountCache.clear();
+      _cacheDate = today;
+    }
+    _dailyCountCache[senderEmail] = (_dailyCountCache[senderEmail] ?? 0) + 1;
+    await StorageService.incrementDailySentCount(senderEmail);
+  }
+
   // Cache of per-sender GoogleSignIn instances
   static final Map<String, GoogleSignIn> _signInCache = {};
 
@@ -108,10 +138,25 @@ class BackgroundDispatcher {
 
   static Future<void> checkAndSendEmails() async {
     final emails = await StorageService.getEmails();
-    // Collect all emails that are ready to send simultaneously
+
+    // ── Stuck Email Watchdog ───────────────────────────────────────────────
+    // If an email has been stuck in "Doing" or "Sending" status for more than
+    // 10 minutes (app was killed mid-send), auto-reset it so it can retry.
+    for (final email in emails) {
+      final isStuck = email.status.startsWith('Doing') || email.status.startsWith('Sending');
+      if (isStuck && !_activelySending.contains(email.id)) {
+        // This email is marked as sending but we are NOT actively processing it
+        // — it got stuck after a crash or force-close. Reset it.
+        print('Watchdog: Resetting stuck email ${email.id} (status: ${email.status})');
+        await StorageService.updateEmail(email.copyWith(status: 'Scheduled'));
+      }
+    }
+
+    // Reload after watchdog fixes
+    final freshEmails = await StorageService.getEmails();
     final List<Future<void>> toSend = [];
 
-    for (final email in emails) {
+    for (final email in freshEmails) {
       if (email.status == 'Success') continue;
       if (email.status == 'Failed') continue;
       if (email.status == 'Paused') continue;
@@ -122,18 +167,16 @@ class BackgroundDispatcher {
 
       // ── Queue-After check ─────────────────────────────────────────────
       if (email.queuedAfter != null && email.queuedAfter!.isNotEmpty) {
-        final blocker = emails.firstWhere(
+        final blocker = freshEmails.firstWhere(
           (e) => e.id == email.queuedAfter,
-          orElse: () => email, // if blocker gone, allow sending
+          orElse: () => email,
         );
-        // Only unblock if the blocker is finished
         if (blocker.id != email.id && blocker.status != 'Success' && blocker.status != 'Failed') {
-          continue; // still waiting for blocker to finish
+          continue;
         }
-        // Blocker done — remove queuedAfter so it can proceed next cycle
         if (blocker.status == 'Success' || blocker.status == 'Failed') {
           await StorageService.updateEmail(email.copyWith(clearQueuedAfter: true));
-          continue; // will be picked up next timer cycle
+          continue;
         }
       }
 
@@ -143,14 +186,12 @@ class BackgroundDispatcher {
           if (email.lastSentDate == today) continue;
         }
         _activelySending.add(email.id);
-        // Add to parallel list — all ready emails start at the same time
         toSend.add(
           _processEmail(email).then((_) => _activelySending.remove(email.id))
         );
       }
     }
 
-    // Launch all ready emails simultaneously
     if (toSend.isNotEmpty) {
       await Future.wait(toSend);
     }
@@ -202,7 +243,10 @@ class BackgroundDispatcher {
   }
 
   static Future<void> _sendSingle(ScheduledEmail email, String token) async {
-    if (await StorageService.getDailySentCount(email.senderEmail) >= 50) return;
+    if (await _getDailyCount(email.senderEmail) >= 50) {
+      await StorageService.updateEmail(email.copyWith(status: 'Daily limit reached. Resumes tomorrow.'));
+      return;
+    }
     final recipient = email.recipients.isNotEmpty ? email.recipients[0] : '';
     final statuses = Map<String, String>.from(email.recipientStatuses);
     if (recipient.isNotEmpty) statuses[recipient] = 'inProcess';
@@ -213,7 +257,7 @@ class BackgroundDispatcher {
     final success = result == 'Success';
     
     if (success) {
-      await StorageService.incrementDailySentCount(email.senderEmail);
+      await _incrementDailyCount(email.senderEmail);
       if (recipient.isNotEmpty) statuses[recipient] = 'sent';
       finalStatus = 'Success';
     } else {
@@ -229,14 +273,14 @@ class BackgroundDispatcher {
   static Future<void> _sendMultiple(ScheduledEmail email, String token) async {
     final total = email.recipients.length;
     final statuses = Map<String, String>.from(email.recipientStatuses);
+    int sentThisRun = 0;
     for (final r in email.recipients) {
       if (!statuses.containsKey(r)) statuses[r] = 'pending';
     }
     for (int i = 0; i < total; i++) {
-      if (await StorageService.getDailySentCount(email.senderEmail) >= 50) break;
+      if (await _getDailyCount(email.senderEmail) >= 50) break;
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
-      // Show (sent+1)/total so user sees the current email being sent
       final st = 'Doing it... (${i + 1}/$total)';
       await StorageService.updateEmail(email.copyWith(status: st, recipientStatuses: Map.from(statuses)));
       final single = email.copyWith(recipients: [recipient]);
@@ -245,13 +289,18 @@ class BackgroundDispatcher {
       final success = result == 'Success';
       
       if (success) {
-        await StorageService.incrementDailySentCount(email.senderEmail);
+        await _incrementDailyCount(email.senderEmail);
         statuses[recipient] = 'sent';
+        sentThisRun++;
       } else {
         statuses[recipient] = 'failed ($result)';
       }
     }
-    await StorageService.updateEmail(email.copyWith(status: 'Success', recipientStatuses: Map.from(statuses)));
+    final allSent = statuses.values.every((s) => s == 'sent');
+    await StorageService.updateEmail(email.copyWith(
+      status: allSent ? 'Success' : 'Day 1: $sentThisRun/$total sent',
+      recipientStatuses: Map.from(statuses),
+    ));
   }
 
   static Future<void> _sendPdfBatch(ScheduledEmail email, String token) async {
@@ -266,14 +315,13 @@ class BackgroundDispatcher {
       if (!statuses.containsKey(r)) statuses[r] = 'pending';
     }
     for (int i = startIdx; i < endIdx; i++) {
-      if (await StorageService.getDailySentCount(email.senderEmail) >= 50) break;
+      if (await _getDailyCount(email.senderEmail) >= 50) break;
       final latestList = await StorageService.getEmails();
       final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
       if (cur.status == 'Paused') return;
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
       newCount = i + 1;
-      // Show (sent+1)/total so user sees real-time progress
       final st = 'Doing it... ($newCount/$total)';
       await StorageService.updateEmail(cur.copyWith(status: st, sentCount: newCount, recipientStatuses: Map.from(statuses)));
       final single = email.copyWith(recipients: [recipient]);
@@ -282,7 +330,7 @@ class BackgroundDispatcher {
       final success = result == 'Success';
       
       if (success) {
-        await StorageService.incrementDailySentCount(email.senderEmail);
+        await _incrementDailyCount(email.senderEmail);
         statuses[recipient] = 'sent';
       } else {
         statuses[recipient] = 'failed ($result)';
@@ -296,7 +344,7 @@ class BackgroundDispatcher {
       await StorageService.updateEmail(cur.copyWith(status: 'Success', sentCount: newCount, lastSentDate: today, recipientStatuses: Map.from(statuses)));
     } else {
       final daysDone = (newCount / batchSize).ceil();
-      final dayStatus = 'Day ' + daysDone.toString() + ': ' + newCount.toString() + '/' + total.toString() + ' sent';
+      final dayStatus = 'Day $daysDone: $newCount/$total sent. Resumes tomorrow.';
       await StorageService.updateEmail(cur.copyWith(status: dayStatus, sentCount: newCount, lastSentDate: today, recipientStatuses: Map.from(statuses)));
     }
   }
@@ -327,14 +375,13 @@ class BackgroundDispatcher {
     }
 
     for (int i = startIdx; i < endIdx; i++) {
-      if (await StorageService.getDailySentCount(email.senderEmail) >= 50) break;
+      if (await _getDailyCount(email.senderEmail) >= 50) break;
       final latestList = await StorageService.getEmails();
       final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
       if (cur.status == 'Paused') return;
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
       newCount = i + 1;
-      // Show real-time counter (sent+1)/total
       final st = 'Merge Day ${(newCount / dailyLimit).ceil()}: $newCount/$total sent';
       await StorageService.updateEmail(cur.copyWith(
         status: st,
@@ -344,7 +391,7 @@ class BackgroundDispatcher {
       final single = email.copyWith(recipients: [recipient]);
       final success = await MailService.sendEmail(emailConfig: single, accessToken: token);
       if (success) {
-        await StorageService.incrementDailySentCount(email.senderEmail);
+        await _incrementDailyCount(email.senderEmail);
         statuses[recipient] = 'sent';
       } else {
         statuses[recipient] = 'failed';

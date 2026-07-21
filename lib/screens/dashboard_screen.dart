@@ -294,7 +294,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _StatChip(
                     icon: Icons.schedule_rounded,
                     label: 'Scheduled',
-                    value: '${_history.where((e) => e.status == 'Scheduled' || e.status.startsWith('Day') || e.status == 'Paused').length}',
+                    // Count everything that is not done (Success/Failed)
+                    // This includes PDF campaigns running over 40 days
+                    value: '${_history.where((e) => e.status != 'Success' && !e.status.startsWith('Failed')).length}',
                     color: AppTheme.primaryBlue,
                   ),
                   const SizedBox(width: 12),
@@ -576,6 +578,7 @@ class _EmailCard extends StatelessWidget {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          constraints: const BoxConstraints(maxWidth: 130),
                           decoration: BoxDecoration(
                             color: clr.withOpacity(0.10),
                             borderRadius: BorderRadius.circular(8),
@@ -583,13 +586,17 @@ class _EmailCard extends StatelessWidget {
                           child: Text(
                             _statusLabel(),
                             style: TextStyle(color: clr, fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 10),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(height: 8),
                         Row(children: [
-                          if (_isSuccess || _isFailed)
+                           // Resend button — show when done or failed
+                          if (_isSuccess || _isFailed || item.status.startsWith('Daily limit'))
                             _ActionBtn(icon: Icons.replay_circle_filled_rounded, color: AppTheme.primaryBlue, onTap: onResend),
-                          if (!_isPdfCampaign && !_isSuccess && !_isFailed && !_isActive && !_isPaused)
+                          // Edit button — show for everything except completed
+                          if (!_isSuccess && !_isFailed)
                             _ActionBtn(icon: Icons.edit_rounded, color: AppTheme.primaryBlue, onTap: onEdit),
                           if (_isPdfCampaign && _isActive)
                             _ActionBtn(icon: Icons.pause_circle_rounded, color: AppTheme.warningAmber, onTap: onStop),
@@ -931,6 +938,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   final _senderController = TextEditingController();
   List<String> _suggestedSenders = [];
   bool _isAuthenticated = false;
+  bool _isAuthenticating = false; // Shows spinner while Google sign-in is in progress
   final _googleSignIn = GoogleSignIn(
     clientId: '787471915530-sg4ul6fm6s1paqabljmksi9c61cf4c77.apps.googleusercontent.com',
     scopes: ['email', 'https://www.googleapis.com/auth/gmail.send'],
@@ -1103,6 +1111,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       _showMsg('sender', 'Please enter a valid Sender Email first.');
       return;
     }
+    setState(() => _isAuthenticating = true);
     try {
       // Force sign-out first so user can choose the correct account
       await _googleSignIn.signOut();
@@ -1113,14 +1122,16 @@ class _ScheduleModalState extends State<_ScheduleModal> {
         if (auth.accessToken != null) {
           await StorageService.saveAccessToken(account.email, auth.accessToken!);
         }
-        setState(() { _isAuthenticated = true; _senderController.text = account.email; });
+        setState(() { _isAuthenticated = true; _isAuthenticating = false; _senderController.text = account.email; });
         await StorageService.saveSenderEmail(account.email);
         // Register with dispatcher cache
         BackgroundDispatcher.registerSignedInAccount(account);
         _showMsg('sender', 'Authenticated as ${account.email}!', isError: false);
+      } else {
+        setState(() => _isAuthenticating = false);
       }
     } catch (_) {
-      setState(() { _isAuthenticated = true; _senderController.text = currentEmail; });
+      setState(() { _isAuthenticated = true; _isAuthenticating = false; _senderController.text = currentEmail; });
       await StorageService.saveSenderEmail(currentEmail);
       _showMsg('sender', 'Sender saved!', isError: false);
     }
@@ -1664,10 +1675,29 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     const SizedBox(height: 10),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () => _authenticateWithGoogle(_senderController.text),
-                        icon: const Icon(Icons.security_rounded, size: 18),
-                        label: const Text('Authenticate with Google'),
+                      height: 48,
+                      child: OutlinedButton(
+                        onPressed: _isAuthenticating ? null : () => _authenticateWithGoogle(_senderController.text),
+                        child: _isAuthenticating
+                            ? const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 18, height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                  SizedBox(width: 10),
+                                  Text('Authenticating...'),
+                                ],
+                              )
+                            : const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.security_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Authenticate with Google'),
+                                ],
+                              ),
                       ),
                     ),
                   ],
