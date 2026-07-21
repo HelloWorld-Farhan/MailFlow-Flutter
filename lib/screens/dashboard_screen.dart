@@ -1261,7 +1261,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     List<String> recipients = [];
     if (_sendType == 'PDF') {
       if (_pdfEmails.isEmpty) { _showMsg('recipient', 'No emails extracted from PDF.'); return; }
-      recipients = _pdfEmails;
+      recipients = _pdfEmails.toSet().toList();
     } else {
       for (var c in _emailControllers) {
         final e = c.text.trim();
@@ -1270,6 +1270,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
           recipients.add(e);
         }
       }
+      recipients = recipients.toSet().toList();
       if (recipients.isEmpty) { _showMsg('recipient', 'Add at least one recipient.'); return; }
     }
     
@@ -2393,14 +2394,17 @@ class _ResendModalState extends State<_ResendModal> {
     if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _showMsg('Enter a valid future date and time.'); return; }
     
     final newEmail = widget.email.copyWith(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
       status: 'Scheduled',
       scheduledDate: _dateController.text,
       scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
       sentCount: 0,
+      recipientStatuses: {},
+      lastSentDate: '',
+      recipients: widget.email.recipients.toSet().toList(),
+      clearQueuedAfter: true,
     );
     
-    await StorageService.saveEmail(newEmail);
+    await StorageService.updateEmail(newEmail);
     if (mounted) Navigator.pop(context);
   }
 
