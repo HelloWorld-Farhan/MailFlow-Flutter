@@ -212,8 +212,7 @@ class BackgroundDispatcher {
         statuses[recipient] = 'sent';
       } else {
         statuses[recipient] = 'failed ($result)';
-      }
-      if (i < total - 1) await Future.delayed(const Duration(seconds: 5));
+      }      // Delay removed for continuous sending
     }
     await StorageService.updateEmail(email.copyWith(status: 'Success', recipientStatuses: Map.from(statuses)));
   }
@@ -249,8 +248,7 @@ class BackgroundDispatcher {
       } else {
         statuses[recipient] = 'failed ($result)';
       }
-      newCount = i + 1;
-      if (i < endIdx - 1) await Future.delayed(const Duration(seconds: 5));
+      newCount = i + 1;      // Delay removed for continuous sending
     }
     final latestList = await StorageService.getEmails();
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
@@ -311,8 +309,7 @@ class BackgroundDispatcher {
       } else {
         statuses[recipient] = 'failed';
       }
-      newCount = i + 1;
-      if (i < endIdx - 1) await Future.delayed(const Duration(seconds: 5));
+      newCount = i + 1;      // Delay removed for continuous sending
     }
     final latestList = await StorageService.getEmails();
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scheduled_email.dart';
 import '../services/storage_service.dart';
 import '../utils/date_input_formatter.dart';
@@ -57,6 +58,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     final history = await StorageService.getEmails();
     final limitsMap = await StorageService.getAllDailyLimits();
     final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
