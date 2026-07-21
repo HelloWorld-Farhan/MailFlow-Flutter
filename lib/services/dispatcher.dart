@@ -295,6 +295,10 @@ class BackgroundDispatcher {
       } else {
         statuses[recipient] = 'failed ($result)';
       }
+      // Anti-spam delay between each email (if user configured it)
+      if (email.delayMinutes > 0 && i < total - 1) {
+        await Future.delayed(Duration(minutes: email.delayMinutes));
+      }
     }
     final allSent = statuses.values.every((s) => s == 'sent');
     await StorageService.updateEmail(email.copyWith(
@@ -334,6 +338,10 @@ class BackgroundDispatcher {
         statuses[recipient] = 'sent';
       } else {
         statuses[recipient] = 'failed ($result)';
+      }
+      // Anti-spam delay between each email
+      if (email.delayMinutes > 0 && i < endIdx - 1) {
+        await Future.delayed(Duration(minutes: email.delayMinutes));
       }
     }
     final latestList = await StorageService.getEmails();
@@ -395,6 +403,10 @@ class BackgroundDispatcher {
         statuses[recipient] = 'sent';
       } else {
         statuses[recipient] = 'failed';
+      }
+      // Anti-spam delay between each email
+      if (email.delayMinutes > 0 && i < endIdx - 1) {
+        await Future.delayed(Duration(minutes: email.delayMinutes));
       }
     }
     final latestList = await StorageService.getEmails();

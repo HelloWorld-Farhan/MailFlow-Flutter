@@ -29,6 +29,10 @@ class ScheduledEmail {
   /// ID of the PDF schedule this one waits for (Queue After mode)
   final String? queuedAfter;
 
+  /// Delay in minutes between each individual email send (anti-spam)
+  /// 0 = no delay (send immediately), 1-5 = wait X minutes between each email
+  final int delayMinutes;
+
   ScheduledEmail({
     required this.id,
     required this.senderEmail,
@@ -49,6 +53,7 @@ class ScheduledEmail {
     Map<String, int>? mergeContributions,
     Map<String, String>? mergeSourceNames,
     this.queuedAfter,
+    this.delayMinutes = 0,
   })  : recipientStatuses = recipientStatuses ?? {},
         mergedSourceIds = mergedSourceIds ?? [],
         mergeContributions = mergeContributions ?? {},
@@ -75,6 +80,7 @@ class ScheduledEmail {
     Map<String, String>? mergeSourceNames,
     String? queuedAfter,
     bool clearQueuedAfter = false,
+    int? delayMinutes,
   }) {
     return ScheduledEmail(
       id: id ?? this.id,
@@ -96,6 +102,7 @@ class ScheduledEmail {
       mergeContributions: mergeContributions ?? this.mergeContributions,
       mergeSourceNames: mergeSourceNames ?? this.mergeSourceNames,
       queuedAfter: clearQueuedAfter ? null : (queuedAfter ?? this.queuedAfter),
+      delayMinutes: delayMinutes ?? this.delayMinutes,
     );
   }
 
@@ -120,6 +127,7 @@ class ScheduledEmail {
       'mergeContributions': mergeContributions,
       'mergeSourceNames': mergeSourceNames,
       'queuedAfter': queuedAfter,
+      'delayMinutes': delayMinutes,
     };
   }
 
@@ -156,6 +164,7 @@ class ScheduledEmail {
           ? Map<String, String>.from(map['mergeSourceNames'])
           : {},
       queuedAfter: map['queuedAfter'],
+      delayMinutes: map['delayMinutes'] ?? 0,
     );
   }
 

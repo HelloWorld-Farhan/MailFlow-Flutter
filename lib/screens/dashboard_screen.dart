@@ -962,6 +962,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
   bool _isAm = true;
+  int _delayMinutes = 2; // Default 2 min between emails (anti-spam)
   String? _senderMsg; bool _isSenderErr = false;
   String? _recipientMsg; bool _isRecipientErr = false;
   String? _dateMsg; bool _isDateErr = false;
@@ -1002,6 +1003,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
         _pdfEmails = e.recipients;
         _dailyLimitController.text = e.dailyLimit > 0 ? e.dailyLimit.toString() : '40';
       }
+      _delayMinutes = e.delayMinutes;
       _scheduleNameController.text = e.scheduleName ?? '';
     } else {
       _sendType = 'Single';
@@ -1313,6 +1315,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       dailyLimit: dailyLimit,
       sentCount: widget.editEmail?.sentCount ?? 0,
       lastSentDate: widget.editEmail?.lastSentDate,
+      delayMinutes: _delayMinutes,
     );
 
     // ── PDF Conflict check for future dates ────────────────────────────
@@ -2038,6 +2041,73 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     ),
                     _buildFieldMsg(_dailyLimitMsg, _isDailyLimitErr),
                   ],
+                  // ── Delay Between Emails (Anti-Spam) ──────────────────
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryBlue.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.15)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.timer_outlined, size: 16, color: AppTheme.primaryBlue),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'Delay Between Emails',
+                              style: TextStyle(fontFamily: 'Outfit', fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
+                            ),
+                            const Spacer(),
+                            Text(
+                              _delayMinutes == 0 ? 'No delay (fastest)' : '$_delayMinutes min between each email',
+                              style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: _delayMinutes >= 2 ? AppTheme.successGreen : AppTheme.warningAmber),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Slower sending = less chance of being blocked as spam',
+                          style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.textLight),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [0, 1, 2, 3, 5].map((min) {
+                            final selected = _delayMinutes == min;
+                            return Expanded(
+                              child: GestureDetector(
+                                onTap: () => setState(() => _delayMinutes = min),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: selected ? AppTheme.primaryBlue : AppTheme.bgSurface,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: selected ? AppTheme.primaryBlue : AppTheme.divider),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        min == 0 ? 'Off' : '${min}m',
+                                        style: TextStyle(
+                                          fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w700,
+                                          color: selected ? Colors.white : AppTheme.textDark,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 24),
 
                   // ── Section 4: Email content ───────────────────────
