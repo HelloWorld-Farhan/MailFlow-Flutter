@@ -2327,17 +2327,18 @@ class _ResendModalState extends State<_ResendModal> {
     if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _showMsg('Enter a valid future date and time.'); return; }
     
     final newEmail = widget.email.copyWith(
+      id: DateTime.now().millisecondsSinceEpoch.toString(), // Create new schedule
       status: 'Scheduled',
       scheduledDate: _dateController.text,
       scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
       sentCount: 0,
-      recipientStatuses: {},
+      recipientStatuses: {}, // Clears the ticks for the new schedule
       lastSentDate: '',
       recipients: widget.email.recipients.toSet().toList(),
       clearQueuedAfter: true,
     );
     
-    await StorageService.updateEmail(newEmail);
+    await StorageService.saveEmail(newEmail); // Save as new instead of updating the old one
     if (mounted) Navigator.pop(context);
   }
 
