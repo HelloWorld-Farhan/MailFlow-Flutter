@@ -975,8 +975,6 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   final List<TextEditingController> _pdfEmailControllers = [];
   bool _isPdfEmailEditing = false;
   int _currentSenderUsage = 0;
-  // Per-date quota for selected sender + date
-  int _scheduledForDate = 0;
   bool _dateQuotaFull = false;
 
   @override
@@ -1025,71 +1023,15 @@ class _ScheduleModalState extends State<_ScheduleModal> {
 
   void _onSenderChanged() async {
     final email = _senderController.text.trim();
-    final date = _dateController.text.trim();
     if (_isValidEmail(email)) {
-      // Count total scheduled emails from this account overall
-      final allEmails = await StorageService.getEmails();
-      final scheduledCount = allEmails.where((e) =>
-        e.senderEmail == email &&
-        e.status != 'Success' &&
-        e.status != 'Failed' &&
-        e.status != 'Paused'
-      ).length;
-      // Count total RECIPIENTS already scheduled for this sender on the chosen date
-      int dateTotal = 0;
-      if (date.length == 10) {
-        final selectedDate = _parseDate(date);
-        if (selectedDate != null) {
-          for (final e in allEmails) {
-            if (e.senderEmail != email) continue;
-            if (e.status == 'Success' || e.status == 'Failed' || e.status == 'Paused') continue;
-            // skip the email being edited
-            if (widget.editEmail != null && e.id == widget.editEmail!.id) continue;
-            
-            final eDate = _parseDate(e.scheduledDate);
-            if (eDate == null) continue;
-
-            if (e.type == 'Single') {
-              if (e.scheduledDate == date) dateTotal += 1;
-            } else if (e.type == 'Multiple') {
-              if (e.scheduledDate == date) dateTotal += e.recipients.length;
-            } else if (e.type == 'PDF') {
-              final dailyLimit = e.dailyLimit > 0 ? e.dailyLimit : 40;
-              final totalEmails = e.recipients.length;
-              if (totalEmails == 0) continue;
-              
-              final daysNeeded = (totalEmails / dailyLimit).ceil();
-              final endDate = eDate.add(Duration(days: daysNeeded - 1));
-              
-              // Normalize dates to remove time parts just in case
-              final sD = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-              final eD = DateTime(eDate.year, eDate.month, eDate.day);
-              final enD = DateTime(endDate.year, endDate.month, endDate.day);
-
-              if ((sD.isAfter(eD) || sD.isAtSameMomentAs(eD)) &&
-                  (sD.isBefore(enD) || sD.isAtSameMomentAs(enD))) {
-                
-                // If it's the very last day, it might only use the remainder
-                if (sD.isAtSameMomentAs(enD)) {
-                  final remainder = totalEmails % dailyLimit;
-                  dateTotal += (remainder == 0 ? dailyLimit : remainder);
-                } else {
-                  dateTotal += dailyLimit;
-                }
-              }
-            }
-          }
-        }
-      }
+      final sentCount = await StorageService.getDailySentCount(email);
       if (mounted) setState(() {
-        _currentSenderUsage = scheduledCount;
-        _scheduledForDate = dateTotal;
-        _dateQuotaFull = date.length == 10 && dateTotal >= 50;
+        _currentSenderUsage = sentCount;
+        _dateQuotaFull = sentCount >= 50;
       });
     } else {
       if (mounted) setState(() {
         _currentSenderUsage = 0;
-        _scheduledForDate = 0;
         _dateQuotaFull = false;
       });
     }
@@ -1241,21 +1183,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     if (!_isValidEmail(sender) || !_isAuthenticated) { _showMsg('sender', 'Authenticate a valid sender email first.'); return; }
     if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _showMsg('date', 'Enter a valid future date and time.'); return; }
 
-    // Validate per-date quota: count how many this new schedule will add
-    final date = _dateController.text.trim();
-    if (date.length == 10) {
-      int newCount = 0;
-      if (_sendType == 'Single') {
-        newCount = 1;
-      } else if (_sendType == 'Multiple') {
-        newCount = _emailControllers.where((c) => _isValidEmail(c.text.trim())).length;
-      } else if (_sendType == 'PDF') {
-        newCount = int.tryParse(_dailyLimitController.text.trim()) ?? 40;
-      }
-      if (_scheduledForDate + newCount > 50) {
-        _showMsg('sender', 'Daily quota full for $date! $_scheduledForDate/50 already scheduled. Please use a different sender email.');
-        return;
-      }
+    // Prevent scheduling if the sender has ALREADY hit 50 emails sent today
+    if (_currentSenderUsage >= 50) {
+      _showMsg('sender', 'Daily quota full for today! $_currentSenderUsage/50 already sent. Please use a different sender email.');
+      return;
     }
 
     List<String> recipients = [];
@@ -1719,14 +1650,14 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       decoration: BoxDecoration(
                         color: _dateQuotaFull
                             ? AppTheme.errorRed.withOpacity(0.08)
-                            : (_scheduledForDate >= 30
+                            : (_currentSenderUsage >= 30
                                 ? AppTheme.warningAmber.withOpacity(0.08)
                                 : AppTheme.successGreen.withOpacity(0.08)),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: _dateQuotaFull
                               ? AppTheme.errorRed.withOpacity(0.4)
-                              : (_scheduledForDate >= 30
+                              : (_currentSenderUsage >= 30
                                   ? AppTheme.warningAmber.withOpacity(0.4)
                                   : AppTheme.successGreen.withOpacity(0.4)),
                         ),
@@ -1739,13 +1670,13 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                               Icon(
                                 _dateQuotaFull
                                     ? Icons.block_rounded
-                                    : (_scheduledForDate >= 30
+                                    : (_currentSenderUsage >= 30
                                         ? Icons.warning_amber_rounded
                                         : Icons.check_circle_outline_rounded),
                                 size: 15,
                                 color: _dateQuotaFull
                                     ? AppTheme.errorRed
-                                    : (_scheduledForDate >= 30
+                                    : (_currentSenderUsage >= 30
                                         ? AppTheme.warningAmber
                                         : AppTheme.successGreen),
                               ),
@@ -1753,15 +1684,15 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                               Expanded(
                                 child: Text(
                                   _dateQuotaFull
-                                      ? 'Quota FULL for ${_dateController.text}'
-                                      : 'Quota for ${_dateController.text}: $_scheduledForDate / 50',
+                                      ? 'Daily Quota FULL'
+                                      : 'Sent Today: $_currentSenderUsage / 50',
                                   style: TextStyle(
                                     fontFamily: 'Inter',
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
                                     color: _dateQuotaFull
                                         ? AppTheme.errorRed
-                                        : (_scheduledForDate >= 30
+                                        : (_currentSenderUsage >= 30
                                             ? AppTheme.warningAmber
                                             : AppTheme.successGreen),
                                   ),
@@ -1772,7 +1703,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                           if (_dateQuotaFull) ...[
                             const SizedBox(height: 6),
                             const Text(
-                              '⚠️ This date already has 50 emails scheduled from this account. Please use a different sender email or choose a different date.',
+                              '⚠️ This sender has already sent 50 emails today. Please use a different sender email.',
                               style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontSize: 11,
@@ -1780,14 +1711,14 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
-                          ] else if (_scheduledForDate > 0) ...[
+                          ] else if (_currentSenderUsage > 0) ...[
                             const SizedBox(height: 4),
                             Text(
-                              '${50 - _scheduledForDate} slots remaining for this date.',
+                              '${50 - _currentSenderUsage} emails remaining for today.',
                               style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontSize: 11,
-                                color: _scheduledForDate >= 30
+                                color: _currentSenderUsage >= 30
                                     ? AppTheme.warningAmber
                                     : AppTheme.successGreen,
                               ),
@@ -2047,72 +1978,74 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     _buildFieldMsg(_dailyLimitMsg, _isDailyLimitErr),
                   ],
                   // ── Delay Between Emails (Anti-Spam) ──────────────────
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryBlue.withOpacity(0.04),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.15)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.timer_outlined, size: 16, color: AppTheme.primaryBlue),
-                            const SizedBox(width: 6),
-                            const Text(
-                              'Delay Between Emails',
-                              style: TextStyle(fontFamily: 'Outfit', fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
-                            ),
-                            const Spacer(),
-                            Text(
-                              _delayMinutes == 0 ? 'No delay (fastest)' : '$_delayMinutes min between each email',
-                              style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: _delayMinutes >= 2 ? AppTheme.successGreen : AppTheme.warningAmber),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Slower sending = less chance of being blocked as spam',
-                          style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.textLight),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [0, 1, 2, 3, 5].map((min) {
-                            final selected = _delayMinutes == min;
-                            return Expanded(
-                              child: GestureDetector(
-                                onTap: () => setState(() => _delayMinutes = min),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: selected ? AppTheme.primaryBlue : AppTheme.bgSurface,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: selected ? AppTheme.primaryBlue : AppTheme.divider),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        min == 0 ? 'Off' : '${min}m',
-                                        style: TextStyle(
-                                          fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w700,
-                                          color: selected ? Colors.white : AppTheme.textDark,
+                  if (_sendType == 'Multiple' || _sendType == 'PDF') ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryBlue.withOpacity(0.04),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.15)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.timer_outlined, size: 16, color: AppTheme.primaryBlue),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'Delay Between Emails',
+                                style: TextStyle(fontFamily: 'Outfit', fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
+                              ),
+                              const Spacer(),
+                              Text(
+                                _delayMinutes == 0 ? 'No delay (fastest)' : '$_delayMinutes min between each email',
+                                style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: _delayMinutes >= 2 ? AppTheme.successGreen : AppTheme.warningAmber),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Slower sending = less chance of being blocked as spam',
+                            style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.textLight),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [0, 1, 2, 3, 5].map((min) {
+                              final selected = _delayMinutes == min;
+                              return Expanded(
+                                child: GestureDetector(
+                                  onTap: () => setState(() => _delayMinutes = min),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: selected ? AppTheme.primaryBlue : AppTheme.bgSurface,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: selected ? AppTheme.primaryBlue : AppTheme.divider),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          min == 0 ? 'Off' : '${min}m',
+                                          style: TextStyle(
+                                            fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w700,
+                                            color: selected ? Colors.white : AppTheme.textDark,
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ],
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 24),
 
                   // ── Section 4: Email content ───────────────────────
