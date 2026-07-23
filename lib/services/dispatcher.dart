@@ -16,37 +16,7 @@ void exactAlarmCallback() async {
 
 class BackgroundDispatcher {
   static Timer? _timer;
-  static final Set<String> _activelySending = {};
-
-  // In-memory daily sent count cache — prevents race conditions when two
-  // senders run in parallel and both read/write SharedPreferences simultaneously.
-  static final Map<String, int> _dailyCountCache = {};
-  static String _cacheDate = '';
-
-  static Future<int> _getDailyCount(String senderEmail) async {
-    final today = _todayString();
-    if (_cacheDate != today) {
-      // New day — clear the cache
-      _dailyCountCache.clear();
-      _cacheDate = today;
-    }
-    if (_dailyCountCache.containsKey(senderEmail)) {
-      return _dailyCountCache[senderEmail]!;
-    }
-    final count = await StorageService.getDailySentCount(senderEmail);
-    _dailyCountCache[senderEmail] = count;
-    return count;
-  }
-
-  static Future<void> _incrementDailyCount(String senderEmail) async {
-    final today = _todayString();
-    if (_cacheDate != today) {
-      _dailyCountCache.clear();
-      _cacheDate = today;
-    }
-    _dailyCountCache[senderEmail] = (_dailyCountCache[senderEmail] ?? 0) + 1;
-    await StorageService.incrementDailySentCount(senderEmail);
-  }
+  static bool _isChecking = false;
 
   // Cache of per-sender GoogleSignIn instances
   static final Map<String, GoogleSignIn> _signInCache = {};
@@ -136,13 +106,21 @@ class BackgroundDispatcher {
     AndroidAlarmManager.cancel(1);
   }
 
-  static bool _isChecking = false;
-
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  MAIN ENTRY POINT — called every 5 seconds by timer & by alarm callbacks
+  // ═══════════════════════════════════════════════════════════════════════════
   static Future<void> checkAndSendEmails() async {
     if (_isChecking) return;
     _isChecking = true;
     try {
-      final emails = await StorageService.getEmails();
+      await _doCheck();
+    } finally {
+      _isChecking = false;
+    }
+  }
+
+  static Future<void> _doCheck() async {
+    final emails = await StorageService.getEmails();
 
     // ── Stuck Email Watchdog ───────────────────────────────────────────────
     // If an email has been stuck in "Doing" or "Sending" status for more than
@@ -164,8 +142,8 @@ class BackgroundDispatcher {
 
     // Reload after watchdog fixes
     final freshEmails = await StorageService.getEmails();
-    final List<Future<void>> toSend = [];
 
+    // ── Process emails SEQUENTIALLY (one schedule at a time) ──────────────
     for (final email in freshEmails) {
       if (email.status == 'Success') continue;
       if (email.status == 'Failed') continue;
@@ -173,7 +151,6 @@ class BackgroundDispatcher {
       if (email.status.startsWith('Doing')) continue;
       if (email.status.startsWith('Sending')) continue;
       if (email.status.startsWith('Merge Day')) continue;
-      if (_activelySending.contains(email.id)) continue;
 
       // ── Queue-After check ─────────────────────────────────────────────
       if (email.queuedAfter != null && email.queuedAfter!.isNotEmpty) {
@@ -195,57 +172,87 @@ class BackgroundDispatcher {
           final today = _todayString();
           if (email.lastSentDate == today) continue;
         }
-        _activelySending.add(email.id);
 
-        // Fetch token sequentially to avoid native GoogleSignInClient race condition
-        String? token;
-        try {
-          final googleSignIn = _getSignIn(email.senderEmail);
-          GoogleSignInAccount? account = googleSignIn.currentUser;
-          if (account == null) {
-            print('Dispatcher: currentUser is null, attempting signInSilently for ${email.senderEmail}');
-            account = await googleSignIn.signInSilently();
-          }
-          if (account != null && account.email == email.senderEmail) {
-            final auth = await account.authentication;
-            token = auth.accessToken;
-            if (token != null) {
-              await StorageService.saveAccessToken(email.senderEmail, token);
-              print('Dispatcher: Token refreshed via signInSilently');
-            }
-          }
-        } catch (e) {
-          print('Dispatcher: signInSilently failed: $e');
-        }
-
+        // ── Get a valid token for this sender ──────────────────────────
+        final token = await _getFreshToken(email.senderEmail);
         if (token == null || token.isEmpty) {
-          token = await StorageService.getAccessToken(email.senderEmail);
-          print('Dispatcher: Using stored token for ${email.senderEmail}: ${token != null ? "found" : "NOT FOUND"}');
-        }
-
-        if (token == null || token.isEmpty) {
-          print('Dispatcher: No token available for ${email.senderEmail}. User must re-authenticate in app.');
+          print('Dispatcher: No token available for ${email.senderEmail}. User must re-authenticate.');
           await StorageService.updateEmail(email.copyWith(
             status: 'Failed: Please open the app and re-authenticate ${email.senderEmail}',
           ));
-          _activelySending.remove(email.id);
           continue;
         }
 
-        toSend.add(
-          _processEmailWithToken(email, token).then((_) => _activelySending.remove(email.id))
-        );
+        // ── Process this one email schedule fully ──────────────────────
+        await _processEmailWithToken(email, token);
+        // After processing one schedule, break out and let the next timer
+        // tick pick up the next schedule. This prevents Android from killing
+        // a long-running loop that tries to process everything at once.
+        // NOTE: For Single emails this is fast so we continue the loop.
+        if (email.type != 'Single') {
+          break;
+        }
       }
-    }
-
-    if (toSend.isNotEmpty) {
-      await Future.wait(toSend);
-    }
-    } finally {
-      _isChecking = false;
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  TOKEN MANAGEMENT — sequential, no races
+  // ═══════════════════════════════════════════════════════════════════════════
+  static Future<String?> _getFreshToken(String senderEmail) async {
+    String? token;
+    try {
+      final googleSignIn = _getSignIn(senderEmail);
+      GoogleSignInAccount? account = googleSignIn.currentUser;
+      if (account == null) {
+        print('Dispatcher: currentUser is null, attempting signInSilently for $senderEmail');
+        account = await googleSignIn.signInSilently();
+      }
+      if (account != null && account.email == senderEmail) {
+        final auth = await account.authentication;
+        token = auth.accessToken;
+        if (token != null) {
+          await StorageService.saveAccessToken(senderEmail, token);
+          print('Dispatcher: Token refreshed via signInSilently');
+        }
+      }
+    } catch (e) {
+      print('Dispatcher: signInSilently failed: $e');
+    }
+
+    if (token == null || token.isEmpty) {
+      token = await StorageService.getAccessToken(senderEmail);
+      print('Dispatcher: Using stored token for $senderEmail: ${token != null ? "found" : "NOT FOUND"}');
+    }
+    return token;
+  }
+
+  /// Force-refresh the token (used after a 401 error)
+  static Future<String?> _forceRefreshToken(String senderEmail) async {
+    print('Dispatcher: Force-refreshing token for $senderEmail');
+    try {
+      final googleSignIn = _getSignIn(senderEmail);
+      // Disconnect and re-sign-in to get a brand new token
+      await googleSignIn.signOut();
+      final account = await googleSignIn.signInSilently();
+      if (account != null && account.email == senderEmail) {
+        final auth = await account.authentication;
+        final token = auth.accessToken;
+        if (token != null) {
+          await StorageService.saveAccessToken(senderEmail, token);
+          print('Dispatcher: Token force-refreshed successfully');
+          return token;
+        }
+      }
+    } catch (e) {
+      print('Dispatcher: Force-refresh failed: $e');
+    }
+    return null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  EMAIL PROCESSING — dispatch to the right handler
+  // ═══════════════════════════════════════════════════════════════════════════
   static Future<void> _processEmailWithToken(ScheduledEmail email, String token) async {
     try {
       if (email.isMerged) {
@@ -262,150 +269,237 @@ class BackgroundDispatcher {
     }
   }
 
-  static Future<void> _sendSingle(ScheduledEmail email, String token) async {
-    if (await _getDailyCount(email.senderEmail) >= 50) {
-      await StorageService.updateEmail(email.copyWith(status: 'Daily limit reached. Resumes tomorrow.'));
-      return;
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  SEND WITH RETRY — sends one email, retries once on 401
+  // ═══════════════════════════════════════════════════════════════════════════
+  /// Sends a single email to one recipient. On 401, force-refreshes the token
+  /// and retries once. Returns the result string and the (possibly new) token.
+  static Future<Map<String, String>> _sendOneWithRetry(
+    ScheduledEmail single,
+    String token,
+  ) async {
+    String result = await MailService.sendEmailWithReason(emailConfig: single, accessToken: token);
+
+    // If 401, force refresh and retry once
+    if (result.contains('401')) {
+      print('Dispatcher: Got 401, attempting token refresh for ${single.senderEmail}');
+      final newToken = await _forceRefreshToken(single.senderEmail);
+      if (newToken != null && newToken.isNotEmpty) {
+        token = newToken;
+        result = await MailService.sendEmailWithReason(emailConfig: single, accessToken: token);
+      }
     }
+
+    return {'result': result, 'token': token};
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  SINGLE EMAIL
+  // ═══════════════════════════════════════════════════════════════════════════
+  static Future<void> _sendSingle(ScheduledEmail email, String token) async {
     final recipient = email.recipients.isNotEmpty ? email.recipients[0] : '';
     final statuses = Map<String, String>.from(email.recipientStatuses);
     if (recipient.isNotEmpty) statuses[recipient] = 'inProcess';
     await StorageService.updateEmail(email.copyWith(status: 'Sending...', recipientStatuses: statuses));
     
-    String finalStatus = '';
-    final result = await MailService.sendEmailWithReason(emailConfig: email, accessToken: token);
+    final single = email.copyWith(recipients: [recipient]);
+    final retryResult = await _sendOneWithRetry(single, token);
+    final result = retryResult['result']!;
     final success = result == 'Success';
     
     if (success) {
-      await _incrementDailyCount(email.senderEmail);
       if (recipient.isNotEmpty) statuses[recipient] = 'sent';
-      finalStatus = 'Success';
+      await StorageService.updateEmail(email.copyWith(
+        status: 'Success',
+        recipientStatuses: statuses,
+      ));
+      print('Dispatcher: Single email sent to $recipient');
     } else {
       if (recipient.isNotEmpty) statuses[recipient] = 'failed';
-      finalStatus = 'Failed: $result';
+      await StorageService.updateEmail(email.copyWith(
+        status: 'Failed: $result',
+        recipientStatuses: statuses,
+      ));
+      print('Dispatcher: Single email FAILED to $recipient: $result');
     }
-    await StorageService.updateEmail(email.copyWith(
-      status: finalStatus,
-      recipientStatuses: statuses,
-    ));
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  MULTIPLE EMAILS (bulk list) — sequential, send-then-count
+  // ═══════════════════════════════════════════════════════════════════════════
   static Future<void> _sendMultiple(ScheduledEmail email, String token) async {
     final total = email.recipients.length;
     final startIdx = email.sentCount;
     final today = _todayString();
-    int newCount = startIdx;
     final statuses = Map<String, String>.from(email.recipientStatuses);
+
+    // Initialize pending statuses for any new recipients
     for (final r in email.recipients) {
       if (!statuses.containsKey(r)) statuses[r] = 'pending';
     }
+
+    print('Dispatcher: Starting Multiple send for ${email.id} from index $startIdx/$total');
+
     for (int i = startIdx; i < total; i++) {
-      if (await _getDailyCount(email.senderEmail) >= 50) break;
+      // Re-read from storage to check for pause
       final latestList = await StorageService.getEmails();
       final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
-      if (cur.status == 'Paused') return;
-      
+      if (cur.status == 'Paused') {
+        print('Dispatcher: Email ${email.id} paused at $i/$total');
+        return;
+      }
+
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
-      newCount = i + 1;
-      final st = 'Doing it... ($newCount/$total)';
-      await StorageService.updateEmail(cur.copyWith(status: st, sentCount: newCount, recipientStatuses: Map.from(statuses)));
-      
+
+      // Update status BEFORE send (shows progress) but do NOT increment sentCount yet
+      await StorageService.updateEmail(cur.copyWith(
+        status: 'Doing it... (${i + 1}/$total)',
+        sentCount: i, // still at i, not i+1 — we haven't sent yet
+        recipientStatuses: Map.from(statuses),
+      ));
+
+      // Actually send the email
       final single = email.copyWith(recipients: [recipient]);
-      
-      final result = await MailService.sendEmailWithReason(emailConfig: single, accessToken: token);
+      final retryResult = await _sendOneWithRetry(single, token);
+      final result = retryResult['result']!;
+      token = retryResult['token']!; // update token in case it was refreshed
       final success = result == 'Success';
-      
+
       if (success) {
-        await _incrementDailyCount(email.senderEmail);
         statuses[recipient] = 'sent';
+        print('Dispatcher: [$i/${total}] Sent to $recipient');
       } else {
         statuses[recipient] = 'failed ($result)';
+        print('Dispatcher: [$i/${total}] FAILED to $recipient: $result');
       }
-      
+
+      // NOW increment sentCount — only after the send attempt completed
+      await StorageService.updateEmail(cur.copyWith(
+        status: 'Doing it... (${i + 1}/$total)',
+        sentCount: i + 1,
+        recipientStatuses: Map.from(statuses),
+      ));
+
       // Anti-spam delay between each email
       if (email.delayMinutes > 0 && i < total - 1) {
+        print('Dispatcher: Waiting ${email.delayMinutes} min before next email...');
         await Future.delayed(Duration(minutes: email.delayMinutes));
       }
     }
-    
+
+    // All done — mark success
     final latestList = await StorageService.getEmails();
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
     if (cur.status == 'Paused') return;
 
-    if (newCount >= total) {
-      await StorageService.updateEmail(cur.copyWith(status: 'Success', sentCount: newCount, lastSentDate: today, recipientStatuses: Map.from(statuses)));
-    } else {
+    await StorageService.updateEmail(cur.copyWith(
+      status: 'Success',
+      sentCount: total,
+      lastSentDate: today,
+      recipientStatuses: Map.from(statuses),
+    ));
+    print('Dispatcher: Multiple email ${email.id} completed — $total/$total sent');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  PDF BATCH — sequential, send-then-count
+  // ═══════════════════════════════════════════════════════════════════════════
+  static Future<void> _sendPdfBatch(ScheduledEmail email, String token) async {
+    final total = email.recipients.length;
+    final batchSize = email.dailyLimit > 0 ? email.dailyLimit : total; // no limit if dailyLimit=0
+    final startIdx = email.sentCount;
+    final endIdx = min(startIdx + batchSize, total);
+    final today = _todayString();
+    final statuses = Map<String, String>.from(email.recipientStatuses);
+
+    for (final r in email.recipients) {
+      if (!statuses.containsKey(r)) statuses[r] = 'pending';
+    }
+
+    print('Dispatcher: Starting PDF batch for ${email.id} from $startIdx to $endIdx (total: $total)');
+
+    for (int i = startIdx; i < endIdx; i++) {
+      final latestList = await StorageService.getEmails();
+      final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
+      if (cur.status == 'Paused') {
+        print('Dispatcher: PDF batch ${email.id} paused at $i/$total');
+        return;
+      }
+
+      final recipient = email.recipients[i];
+      statuses[recipient] = 'inProcess';
+
       await StorageService.updateEmail(cur.copyWith(
-        status: 'Limit/Paused: $newCount/$total sent',
+        status: 'Doing it... (${i + 1}/$total)',
+        sentCount: i,
+        recipientStatuses: Map.from(statuses),
+      ));
+
+      final single = email.copyWith(recipients: [recipient]);
+      final retryResult = await _sendOneWithRetry(single, token);
+      final result = retryResult['result']!;
+      token = retryResult['token']!;
+      final success = result == 'Success';
+
+      if (success) {
+        statuses[recipient] = 'sent';
+        print('Dispatcher: PDF [$i/$total] Sent to $recipient');
+      } else {
+        statuses[recipient] = 'failed ($result)';
+        print('Dispatcher: PDF [$i/$total] FAILED to $recipient: $result');
+      }
+
+      // Increment sentCount AFTER send
+      await StorageService.updateEmail(cur.copyWith(
+        status: 'Doing it... (${i + 1}/$total)',
+        sentCount: i + 1,
+        recipientStatuses: Map.from(statuses),
+      ));
+
+      if (email.delayMinutes > 0 && i < endIdx - 1) {
+        print('Dispatcher: Waiting ${email.delayMinutes} min before next PDF email...');
+        await Future.delayed(Duration(minutes: email.delayMinutes));
+      }
+    }
+
+    final latestList = await StorageService.getEmails();
+    final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
+    if (cur.status == 'Paused') return;
+
+    final newCount = endIdx;
+    if (newCount >= total) {
+      await StorageService.updateEmail(cur.copyWith(
+        status: 'Success',
         sentCount: newCount,
         lastSentDate: today,
         recipientStatuses: Map.from(statuses),
       ));
-    }
-  }
-
-  static Future<void> _sendPdfBatch(ScheduledEmail email, String token) async {
-    final total = email.recipients.length;
-    final batchSize = email.dailyLimit > 0 ? email.dailyLimit : 40;
-    final startIdx = email.sentCount;
-    final endIdx = min(startIdx + batchSize, total);
-    final today = _todayString();
-    int newCount = startIdx;
-    final statuses = Map<String, String>.from(email.recipientStatuses);
-    for (final r in email.recipients) {
-      if (!statuses.containsKey(r)) statuses[r] = 'pending';
-    }
-    for (int i = startIdx; i < endIdx; i++) {
-      if (await _getDailyCount(email.senderEmail) >= 50) break;
-      final latestList = await StorageService.getEmails();
-      final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
-      if (cur.status == 'Paused') return;
-      final recipient = email.recipients[i];
-      statuses[recipient] = 'inProcess';
-      newCount = i + 1;
-      final st = 'Doing it... ($newCount/$total)';
-      await StorageService.updateEmail(cur.copyWith(status: st, sentCount: newCount, recipientStatuses: Map.from(statuses)));
-      final single = email.copyWith(recipients: [recipient]);
-      
-      final result = await MailService.sendEmailWithReason(emailConfig: single, accessToken: token);
-      final success = result == 'Success';
-      
-      if (success) {
-        await _incrementDailyCount(email.senderEmail);
-        statuses[recipient] = 'sent';
-      } else {
-        statuses[recipient] = 'failed ($result)';
-      }
-      // Anti-spam delay between each email
-      if (email.delayMinutes > 0 && i < endIdx - 1) {
-        await Future.delayed(Duration(minutes: email.delayMinutes));
-      }
-    }
-    final latestList = await StorageService.getEmails();
-    final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
-    if (cur.status == 'Paused') return;
-
-    if (newCount >= total) {
-      await StorageService.updateEmail(cur.copyWith(status: 'Success', sentCount: newCount, lastSentDate: today, recipientStatuses: Map.from(statuses)));
+      print('Dispatcher: PDF batch ${email.id} completed — $total/$total sent');
     } else {
       final daysDone = (newCount / batchSize).ceil();
       final dayStatus = 'Day $daysDone: $newCount/$total sent. Resumes tomorrow.';
-      await StorageService.updateEmail(cur.copyWith(status: dayStatus, sentCount: newCount, lastSentDate: today, recipientStatuses: Map.from(statuses)));
+      await StorageService.updateEmail(cur.copyWith(
+        status: dayStatus,
+        sentCount: newCount,
+        lastSentDate: today,
+        recipientStatuses: Map.from(statuses),
+      ));
+      print('Dispatcher: PDF batch ${email.id} day done — $newCount/$total sent');
     }
   }
 
-  // ── Merged PDF Batch Sending ────────────────────────────────────────────
-  // Recipients are interleaved: first N from source-A, then M from source-B
-  // based on mergeContributions map. Proportional split per day.
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  MERGED PDF BATCH — sequential, send-then-count
+  // ═══════════════════════════════════════════════════════════════════════════
   static Future<void> _sendMergedPdfBatch(ScheduledEmail email, String token) async {
     final total = email.recipients.length;
-    final dailyLimit = email.dailyLimit > 0 ? email.dailyLimit : 40;
+    final dailyLimit = email.dailyLimit > 0 ? email.dailyLimit : total;
     final startIdx = email.sentCount;
     final endIdx = min(startIdx + dailyLimit, total);
     final today = _todayString();
-    int newCount = startIdx;
     final statuses = Map<String, String>.from(email.recipientStatuses);
+
     for (final r in email.recipients) {
       if (!statuses.containsKey(r)) statuses[r] = 'pending';
     }
@@ -420,37 +514,56 @@ class BackgroundDispatcher {
           .join(' | ');
     }
 
+    print('Dispatcher: Starting Merged PDF for ${email.id} from $startIdx to $endIdx (total: $total)');
+
     for (int i = startIdx; i < endIdx; i++) {
-      if (await _getDailyCount(email.senderEmail) >= 50) break;
       final latestList = await StorageService.getEmails();
       final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
-      if (cur.status == 'Paused') return;
+      if (cur.status == 'Paused') {
+        print('Dispatcher: Merged PDF ${email.id} paused at $i/$total');
+        return;
+      }
+
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
-      newCount = i + 1;
-      final st = 'Merge Day ${(newCount / dailyLimit).ceil()}: $newCount/$total sent';
+
       await StorageService.updateEmail(cur.copyWith(
-        status: st,
-        sentCount: newCount,
+        status: 'Merge Day ${((i + 1) / dailyLimit).ceil()}: ${i + 1}/$total sending...',
+        sentCount: i,
         recipientStatuses: Map.from(statuses),
       ));
+
       final single = email.copyWith(recipients: [recipient]);
-      final success = await MailService.sendEmail(emailConfig: single, accessToken: token);
+      final retryResult = await _sendOneWithRetry(single, token);
+      final result = retryResult['result']!;
+      token = retryResult['token']!;
+      final success = result == 'Success';
+
       if (success) {
-        await _incrementDailyCount(email.senderEmail);
         statuses[recipient] = 'sent';
+        print('Dispatcher: Merged [$i/$total] Sent to $recipient');
       } else {
-        statuses[recipient] = 'failed';
+        statuses[recipient] = 'failed ($result)';
+        print('Dispatcher: Merged [$i/$total] FAILED to $recipient: $result');
       }
-      // Anti-spam delay between each email
+
+      // Increment sentCount AFTER send
+      await StorageService.updateEmail(cur.copyWith(
+        status: 'Merge Day ${((i + 1) / dailyLimit).ceil()}: ${i + 1}/$total sent',
+        sentCount: i + 1,
+        recipientStatuses: Map.from(statuses),
+      ));
+
       if (email.delayMinutes > 0 && i < endIdx - 1) {
         await Future.delayed(Duration(minutes: email.delayMinutes));
       }
     }
+
     final latestList = await StorageService.getEmails();
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
     if (cur.status == 'Paused') return;
 
+    final newCount = endIdx;
     if (newCount >= total) {
       await StorageService.updateEmail(cur.copyWith(
         status: 'Success',
@@ -458,6 +571,7 @@ class BackgroundDispatcher {
         lastSentDate: today,
         recipientStatuses: Map.from(statuses),
       ));
+      print('Dispatcher: Merged PDF ${email.id} completed — $total/$total sent');
     } else {
       final daysDone = (newCount / dailyLimit).ceil();
       final dayStatus = 'Merge Day $daysDone: $newCount/$total sent [$mergeLabel]';
@@ -467,9 +581,13 @@ class BackgroundDispatcher {
         lastSentDate: today,
         recipientStatuses: Map.from(statuses),
       ));
+      print('Dispatcher: Merged PDF ${email.id} day done — $newCount/$total sent');
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  HELPERS
+  // ═══════════════════════════════════════════════════════════════════════════
   static String _todayString() {
     final now = DateTime.now();
     return now.day.toString().padLeft(2, '0') + '/' + now.month.toString().padLeft(2, '0') + '/' + now.year.toString();
