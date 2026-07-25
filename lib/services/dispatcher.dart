@@ -389,6 +389,8 @@ class BackgroundDispatcher {
 
       if (success) {
         statuses[recipient] = 'sent';
+        // Track in global daily limit counter
+        await StorageService.incrementDailySentCount(email.senderEmail);
         print('Dispatcher: [$i/${total}] Sent to $recipient');
       } else {
         statuses[recipient] = 'failed ($result)';
@@ -465,6 +467,8 @@ class BackgroundDispatcher {
 
       if (success) {
         statuses[recipient] = 'sent';
+        // Track in global daily limit counter
+        await StorageService.incrementDailySentCount(email.senderEmail);
         print('Dispatcher: PDF [$i/$total] Sent to $recipient');
       } else {
         statuses[recipient] = 'failed ($result)';
@@ -562,6 +566,8 @@ class BackgroundDispatcher {
 
       if (success) {
         statuses[recipient] = 'sent';
+        // Track in global daily limit counter
+        await StorageService.incrementDailySentCount(email.senderEmail);
         print('Dispatcher: Merged [$i/$total] Sent to $recipient');
       } else {
         statuses[recipient] = 'failed ($result)';

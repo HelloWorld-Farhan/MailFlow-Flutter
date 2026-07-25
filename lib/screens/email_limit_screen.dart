@@ -27,9 +27,24 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
       duration: const Duration(milliseconds: 700),
     );
     _loadLimits();
-    // Auto-refresh every 5 seconds
+    // Auto-refresh every 5 seconds to reflect new sends
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _loadLimits(silent: true);
+    });
+    // Schedule a one-shot timer to fire just after midnight to reset the display
+    _scheduleMidnightReset();
+  }
+
+  void _scheduleMidnightReset() {
+    final now = DateTime.now();
+    final midnight = DateTime(now.year, now.month, now.day + 1, 0, 0, 1); // 1 second past midnight
+    final diff = midnight.difference(now);
+    Future.delayed(diff, () {
+      if (mounted) {
+        _loadLimits();
+        // Re-schedule for next midnight
+        _scheduleMidnightReset();
+      }
     });
   }
 
@@ -45,18 +60,15 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
 
     final limits = await StorageService.getAllDailyLimits();
 
-    // Also add saved senders with 0 usage
-    final savedSenders = await StorageService.getSenderEmails();
-    for (final sender in savedSenders) {
-      if (!limits.containsKey(sender)) {
-        limits[sender] = 0;
-      }
-    }
+    // Only show accounts that have actually sent emails today (count > 0)
+    // Do NOT add saved senders with 0 — they should only appear once they
+    // have actually sent at least one email today.
 
     if (mounted) {
       setState(() {
         _limits = Map.fromEntries(
-          limits.entries.toList()..sort((a, b) => b.value.compareTo(a.value)),
+          limits.entries.where((e) => e.value > 0).toList()
+            ..sort((a, b) => b.value.compareTo(a.value)),
         );
         _isLoading = false;
         _isRefreshing = false;
@@ -268,7 +280,7 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
                     ? const SliverFillRemaining(
                         child: Center(
                           child: Text(
-                            'No sender accounts found.\nSchedule an email to see data.',
+                            'No emails sent today yet.\nAccounts will appear here once you send.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontFamily: 'Inter',
