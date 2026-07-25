@@ -270,6 +270,23 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Divider(height: 20),
+                if (!email.isMerged && email.type == 'PDF') ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryBlue.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.2)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.info_outline_rounded, size: 16, color: AppTheme.primaryBlue),
+                      const SizedBox(width: 8),
+                      Text('Sending ${email.dailyLimit > 0 ? email.dailyLimit : 40} emails per day', 
+                           style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.primaryBlue, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                ],
                 // Merge info section
                 if (email.isMerged) ...[
                   Container(

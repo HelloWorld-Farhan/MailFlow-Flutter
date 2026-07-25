@@ -152,6 +152,27 @@ class BackgroundDispatcher {
       if (email.status.startsWith('Sending')) continue;
       if (email.status.startsWith('Merge Day')) continue;
 
+      // ── Weekend Auto-Pause Check ──────────────────────────────────────
+      final now = DateTime.now();
+      final isWeekend = now.weekday == DateTime.saturday || now.weekday == DateTime.sunday;
+
+      if (isWeekend && !email.forceWeekend && email.status != 'Paused (Weekend)' && email.status != 'Paused') {
+        await StorageService.updateEmail(email.copyWith(status: 'Paused (Weekend)'));
+        continue;
+      }
+      if (!isWeekend && email.status == 'Paused (Weekend)') {
+        final sentCount = email.sentCount;
+        final batchSize = email.dailyLimit > 0 ? email.dailyLimit : 40;
+        String newStatus = 'Scheduled';
+        if (sentCount > 0) {
+          final daysDone = (sentCount / batchSize).ceil();
+          newStatus = 'Day $daysDone: $sentCount/${email.recipients.length} sent';
+        }
+        await StorageService.updateEmail(email.copyWith(status: newStatus, forceWeekend: false));
+        continue;
+      }
+      if (email.status == 'Paused (Weekend)') continue;
+
       // ── Queue-After check ─────────────────────────────────────────────
       if (email.queuedAfter != null && email.queuedAfter!.isNotEmpty) {
         final blocker = freshEmails.firstWhere(

@@ -28,6 +28,29 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
+String _getWeekdayString(String dateStr) {
+  if (dateStr.length != 10) return '';
+  try {
+    final parts = dateStr.split('/');
+    if (parts.length == 3) {
+      final day = int.parse(parts[0]);
+      final month = int.parse(parts[1]);
+      final year = int.parse(parts[2]);
+      final dt = DateTime(year, month, day);
+      switch (dt.weekday) {
+        case 1: return 'Monday';
+        case 2: return 'Tuesday';
+        case 3: return 'Wednesday';
+        case 4: return 'Thursday';
+        case 5: return 'Friday';
+        case 6: return 'Saturday';
+        case 7: return 'Sunday';
+      }
+    }
+  } catch (_) {}
+  return '';
+}
+
 class _DashboardScreenState extends State<DashboardScreen> {
   List<ScheduledEmail> _history = [];
   bool _isLoading = true;
@@ -124,6 +147,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _resumeEmail(ScheduledEmail email) async {
+    final now = DateTime.now();
+    final isWeekend = now.weekday == DateTime.saturday || now.weekday == DateTime.sunday;
+    bool forceWeekend = false;
+
+    if (isWeekend) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(children: [
+            Icon(Icons.warning_amber_rounded, color: AppTheme.errorRed),
+            SizedBox(width: 8),
+            Text('Weekend Warning', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, fontSize: 18)),
+          ]),
+          content: const Text('It is Saturday/Sunday. Companies might not check their email today. Do you still want to resume?', style: TextStyle(fontFamily: 'Inter', fontSize: 14)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel', style: TextStyle(color: AppTheme.textMid))),
+            TextButton(
+              onPressed: () => Navigator.pop(c, true),
+              style: TextButton.styleFrom(backgroundColor: AppTheme.primaryBlue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              child: const Text('Resume Anyway'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+      forceWeekend = true;
+    }
+
     final sentCount = email.sentCount;
     final total = email.recipients.length;
     final batchSize = email.dailyLimit > 0 ? email.dailyLimit : 40;
@@ -134,7 +186,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final daysDone = (sentCount / batchSize).ceil();
       newStatus = 'Day $daysDone: $sentCount/$total sent';
     }
-    await StorageService.updateEmail(email.copyWith(status: newStatus));
+    await StorageService.updateEmail(email.copyWith(status: newStatus, forceWeekend: forceWeekend));
     _loadHistory();
   }
 
@@ -2147,14 +2199,30 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   Row(
                     children: [
                       Expanded(
-                        child: TextField(
-                          controller: _dateController,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [DateInputFormatter()],
-                          decoration: const InputDecoration(
-                            hintText: 'DD/MM/YYYY',
-                            prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
-                          ),
+                        child: ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: _dateController,
+                          builder: (context, value, child) {
+                            final weekdayStr = _getWeekdayString(value.text);
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                TextField(
+                                  controller: _dateController,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [DateInputFormatter()],
+                                  decoration: const InputDecoration(
+                                    hintText: 'DD/MM/YYYY',
+                                    prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
+                                  ),
+                                ),
+                                if (weekdayStr.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4, left: 4),
+                                    child: Text(weekdayStr, style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                                  ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -2394,14 +2462,30 @@ class _ResendModalState extends State<_ResendModal> {
                   Row(
                     children: [
                       Expanded(
-                        child: TextField(
-                          controller: _dateController,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [DateInputFormatter()],
-                          decoration: const InputDecoration(
-                            hintText: 'DD/MM/YYYY',
-                            prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
-                          ),
+                        child: ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: _dateController,
+                          builder: (context, value, child) {
+                            final weekdayStr = _getWeekdayString(value.text);
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                TextField(
+                                  controller: _dateController,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [DateInputFormatter()],
+                                  decoration: const InputDecoration(
+                                    hintText: 'DD/MM/YYYY',
+                                    prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
+                                  ),
+                                ),
+                                if (weekdayStr.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4, left: 4),
+                                    child: Text(weekdayStr, style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                                  ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                       const SizedBox(width: 12),

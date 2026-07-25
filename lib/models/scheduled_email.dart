@@ -28,6 +28,9 @@ class ScheduledEmail {
   final Map<String, String> mergeSourceNames;
   /// ID of the PDF schedule this one waits for (Queue After mode)
   final String? queuedAfter;
+  
+  /// True if the user manually resumed this schedule during a weekend, bypassing the auto-pause
+  final bool forceWeekend;
 
   /// Delay in minutes between each individual email send (anti-spam)
   /// 0 = no delay (send immediately), 1-5 = wait X minutes between each email
@@ -56,6 +59,7 @@ class ScheduledEmail {
     Map<String, int>? mergeContributions,
     Map<String, String>? mergeSourceNames,
     this.queuedAfter,
+    this.forceWeekend = false,
     this.delayMinutes = 0,
     int? lastUpdateEpoch,
   })  : recipientStatuses = recipientStatuses ?? {},
@@ -85,6 +89,7 @@ class ScheduledEmail {
     Map<String, String>? mergeSourceNames,
     String? queuedAfter,
     bool clearQueuedAfter = false,
+    bool? forceWeekend,
     int? delayMinutes,
     int? lastUpdateEpoch,
     bool autoUpdateEpoch = true,
@@ -109,6 +114,7 @@ class ScheduledEmail {
       mergeContributions: mergeContributions ?? this.mergeContributions,
       mergeSourceNames: mergeSourceNames ?? this.mergeSourceNames,
       queuedAfter: clearQueuedAfter ? null : (queuedAfter ?? this.queuedAfter),
+      forceWeekend: forceWeekend ?? this.forceWeekend,
       delayMinutes: delayMinutes ?? this.delayMinutes,
       lastUpdateEpoch: autoUpdateEpoch ? DateTime.now().millisecondsSinceEpoch : (lastUpdateEpoch ?? this.lastUpdateEpoch),
     );
@@ -135,6 +141,7 @@ class ScheduledEmail {
       'mergeContributions': mergeContributions,
       'mergeSourceNames': mergeSourceNames,
       'queuedAfter': queuedAfter,
+      'forceWeekend': forceWeekend,
       'delayMinutes': delayMinutes,
       'lastUpdateEpoch': lastUpdateEpoch,
     };
@@ -173,6 +180,7 @@ class ScheduledEmail {
           ? Map<String, String>.from(map['mergeSourceNames'])
           : {},
       queuedAfter: map['queuedAfter'],
+      forceWeekend: map['forceWeekend'] ?? false,
       delayMinutes: map['delayMinutes'] ?? 0,
       lastUpdateEpoch: map['lastUpdateEpoch'],
     );
