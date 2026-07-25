@@ -819,8 +819,23 @@ class _DetailsDialogState extends State<_DetailsDialog> {
               ),
               const SizedBox(height: 16),
               _infoRow(Icons.account_circle_outlined, 'Sender', email.senderEmail),
-              _infoRow(Icons.calendar_today_rounded, 'Date', email.scheduledDate),
+              Builder(builder: (context) {
+                String wd = '';
+                try {
+                  final p = email.scheduledDate.split('/');
+                  if (p.length == 3) {
+                    final dt = DateTime(int.parse(p[2]), int.parse(p[1]), int.parse(p[0]));
+                    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                    wd = ' (${days[dt.weekday - 1]})';
+                  }
+                } catch (_) {}
+                return _infoRow(Icons.calendar_today_rounded, 'Date', '${email.scheduledDate}$wd');
+              }),
               _infoRow(Icons.access_time_rounded, 'Time', email.scheduledTime),
+              if (email.type == 'PDF' || email.isMerged)
+                _infoRow(Icons.speed_rounded, 'Daily Limit', '${email.dailyLimit > 0 ? email.dailyLimit : 40} emails / day'),
+              if (email.type == 'Multiple' || email.type == 'PDF' || email.isMerged)
+                _infoRow(Icons.timer_outlined, 'Delay', '${email.delayMinutes} min between emails'),
               _infoRow(Icons.subject_rounded, 'Subject', email.subject.isEmpty ? '(No Subject)' : email.subject),
               const SizedBox(height: 8),
               // Collapsible Body Section
