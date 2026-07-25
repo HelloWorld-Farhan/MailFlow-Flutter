@@ -6,6 +6,29 @@ import '../models/scheduled_email.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 
+String _getWeekdayString(String dateStr) {
+  if (dateStr.length != 10) return '';
+  try {
+    final parts = dateStr.split('/');
+    if (parts.length == 3) {
+      final day = int.parse(parts[0]);
+      final month = int.parse(parts[1]);
+      final year = int.parse(parts[2]);
+      final dt = DateTime(year, month, day);
+      switch (dt.weekday) {
+        case 1: return 'Monday';
+        case 2: return 'Tuesday';
+        case 3: return 'Wednesday';
+        case 4: return 'Thursday';
+        case 5: return 'Friday';
+        case 6: return 'Saturday';
+        case 7: return 'Sunday';
+      }
+    }
+  } catch (_) {}
+  return '';
+}
+
 class EmailDetailScreen extends StatefulWidget {
   const EmailDetailScreen({Key? key}) : super(key: key);
   @override
@@ -256,7 +279,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
                         color: _typeColor(email.type, email.isMerged), fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 8),
-              Expanded(child: Text('${email.scheduledDate}  |  ${email.scheduledTime}',
+              Expanded(child: Text('${email.scheduledDate} (${_getWeekdayString(email.scheduledDate)})  |  ${email.scheduledTime}',
                   style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textLight),
                   overflow: TextOverflow.ellipsis)),
             ]),

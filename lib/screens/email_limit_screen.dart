@@ -87,7 +87,11 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
-    return '${now.day} ${months[now.month - 1]} ${now.year}';
+    const weekdays = [
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+    ];
+    final dayStr = weekdays[now.weekday - 1];
+    return '$dayStr, ${now.day} ${months[now.month - 1]} ${now.year}';
   }
 
   @override
