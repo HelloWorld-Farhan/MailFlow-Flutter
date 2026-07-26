@@ -2212,6 +2212,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   _SectionHeader(title: '5  Schedule Date & Time', icon: Icons.schedule_rounded),
                   const SizedBox(height: 10),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: ValueListenableBuilder<TextEditingValue>(
@@ -2409,8 +2410,11 @@ class _ResendModalState extends State<_ResendModal> {
   Future<void> _submit() async {
     if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _showMsg('Enter a valid future date and time.'); return; }
     
+    final originalName = widget.email.scheduleName ?? 'Resend Schedule';
+    final resendName = originalName.contains('(Resend)') ? originalName : '$originalName (Resend)';
     final newEmail = widget.email.copyWith(
       id: DateTime.now().millisecondsSinceEpoch.toString(), // Create new schedule
+      scheduleName: resendName,
       status: 'Scheduled',
       scheduledDate: _dateController.text,
       scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
@@ -2475,6 +2479,7 @@ class _ResendModalState extends State<_ResendModal> {
                   ),
                   const SizedBox(height: 10),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: ValueListenableBuilder<TextEditingValue>(

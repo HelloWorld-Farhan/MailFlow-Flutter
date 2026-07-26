@@ -382,10 +382,16 @@ class BackgroundDispatcher {
 
       // Actually send the email
       final single = email.copyWith(recipients: [recipient]);
-      final retryResult = await _sendOneWithRetry(single, token);
-      final result = retryResult['result']!;
-      token = retryResult['token']!; // update token in case it was refreshed
-      final success = result == 'Success';
+      String result;
+      bool success = false;
+      try {
+        final retryResult = await _sendOneWithRetry(single, token);
+        result = retryResult['result']!;
+        token = retryResult['token']!; // update token in case it was refreshed
+        success = result == 'Success';
+      } catch (e) {
+        result = 'Error: $e';
+      }
 
       if (success) {
         statuses[recipient] = 'sent';
@@ -460,10 +466,16 @@ class BackgroundDispatcher {
       ));
 
       final single = email.copyWith(recipients: [recipient]);
-      final retryResult = await _sendOneWithRetry(single, token);
-      final result = retryResult['result']!;
-      token = retryResult['token']!;
-      final success = result == 'Success';
+      String result;
+      bool success = false;
+      try {
+        final retryResult = await _sendOneWithRetry(single, token);
+        result = retryResult['result']!;
+        token = retryResult['token']!;
+        success = result == 'Success';
+      } catch (e) {
+        result = 'Error: $e';
+      }
 
       if (success) {
         statuses[recipient] = 'sent';
@@ -559,10 +571,16 @@ class BackgroundDispatcher {
       ));
 
       final single = email.copyWith(recipients: [recipient]);
-      final retryResult = await _sendOneWithRetry(single, token);
-      final result = retryResult['result']!;
-      token = retryResult['token']!;
-      final success = result == 'Success';
+      String result;
+      bool success = false;
+      try {
+        final retryResult = await _sendOneWithRetry(single, token);
+        result = retryResult['result']!;
+        token = retryResult['token']!;
+        success = result == 'Success';
+      } catch (e) {
+        result = 'Error: $e';
+      }
 
       if (success) {
         statuses[recipient] = 'sent';
