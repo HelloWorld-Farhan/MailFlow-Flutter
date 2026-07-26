@@ -819,6 +819,8 @@ class _DetailsDialogState extends State<_DetailsDialog> {
               ),
               const SizedBox(height: 16),
               _infoRow(Icons.account_circle_outlined, 'Sender', email.senderEmail),
+              if (email.createdAt != null)
+                _infoRow(Icons.add_task_rounded, 'Created On', email.createdAt!),
               Builder(builder: (context) {
                 String wd = '';
                 try {
@@ -1315,6 +1317,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       sentCount: widget.editEmail?.sentCount ?? 0,
       lastSentDate: widget.editEmail?.lastSentDate,
       delayMinutes: _delayMinutes,
+      createdAt: widget.editEmail?.createdAt ?? '${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}',
     );
 
     // ── PDF Conflict check for future dates ────────────────────────────
@@ -1551,9 +1554,15 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   // Title
                   Row(
                     children: [
-                      Text(
-                        widget.editEmail != null ? 'Edit Schedule' : 'New Schedule',
-                        style: const TextStyle(fontFamily: 'Outfit', fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                      Expanded(
+                        child: Text(
+                          widget.editEmail != null ? 'Edit Schedule' : (() {
+                            final n = DateTime.now();
+                            final d = '${n.day.toString().padLeft(2, '0')}/${n.month.toString().padLeft(2, '0')}/${n.year}';
+                            return 'New Schedule  $d (${_getWeekdayString(d)})';
+                          })(),
+                          style: TextStyle(fontFamily: 'Outfit', fontSize: widget.editEmail != null ? 22 : 16, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                        ),
                       ),
                       const Spacer(),
                       GestureDetector(
@@ -2416,6 +2425,7 @@ class _ResendModalState extends State<_ResendModal> {
       id: DateTime.now().millisecondsSinceEpoch.toString(), // Create new schedule
       scheduleName: resendName,
       status: 'Scheduled',
+      createdAt: '${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}',
       scheduledDate: _dateController.text,
       scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
       sentCount: 0,

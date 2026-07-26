@@ -14,6 +14,7 @@ class ScheduledEmail {
   final int sentCount;
   final int dailyLimit;
   final String? lastSentDate;
+  final String? createdAt;
   // Per-recipient statuses: 'sent', 'failed', 'inProcess', 'pending'
   final Map<String, String> recipientStatuses;
 
@@ -53,6 +54,7 @@ class ScheduledEmail {
     this.sentCount = 0,
     this.dailyLimit = 0,
     this.lastSentDate,
+    this.createdAt,
     Map<String, String>? recipientStatuses,
     this.isMerged = false,
     List<String>? mergedSourceIds,
@@ -82,6 +84,7 @@ class ScheduledEmail {
     int? sentCount,
     int? dailyLimit,
     String? lastSentDate,
+    String? createdAt,
     Map<String, String>? recipientStatuses,
     bool? isMerged,
     List<String>? mergedSourceIds,
@@ -108,6 +111,7 @@ class ScheduledEmail {
       sentCount: sentCount ?? this.sentCount,
       dailyLimit: dailyLimit ?? this.dailyLimit,
       lastSentDate: lastSentDate ?? this.lastSentDate,
+      createdAt: createdAt ?? this.createdAt,
       recipientStatuses: recipientStatuses ?? this.recipientStatuses,
       isMerged: isMerged ?? this.isMerged,
       mergedSourceIds: mergedSourceIds ?? this.mergedSourceIds,
@@ -135,6 +139,7 @@ class ScheduledEmail {
       'sentCount': sentCount,
       'dailyLimit': dailyLimit,
       'lastSentDate': lastSentDate,
+      'createdAt': createdAt,
       'recipientStatuses': recipientStatuses,
       'isMerged': isMerged,
       'mergedSourceIds': mergedSourceIds,
@@ -162,6 +167,7 @@ class ScheduledEmail {
       sentCount: map['sentCount'] ?? 0,
       dailyLimit: map['dailyLimit'] ?? 0,
       lastSentDate: map['lastSentDate'],
+      createdAt: map['createdAt'],
       recipientStatuses: map['recipientStatuses'] != null
           ? Map<String, String>.from(map['recipientStatuses'])
           : {},
