@@ -189,6 +189,8 @@ class BackgroundDispatcher {
       }
 
       if (_isTimeArrived(email.scheduledDate, email.scheduledTime)) {
+        if (!_isTimeOfDayArrived(email.scheduledTime)) continue;
+
         if ((email.type == 'PDF' || email.isMerged) && email.dailyLimit > 0) {
           final today = _todayString();
           if (email.lastSentDate == today) continue;
@@ -652,6 +654,24 @@ class BackgroundDispatcher {
       if (isAm && hour == 12) hour = 0;
       final scheduled = DateTime(year, month, day, hour, minute);
       return scheduled.isBefore(DateTime.now()) || scheduled.isAtSameMomentAs(DateTime.now());
+    } catch (e) {
+      return false;
+    }
+  }
+  static bool _isTimeOfDayArrived(String timeString) {
+    if (timeString.isEmpty) return false;
+    try {
+      final isAm = timeString.contains('AM');
+      final rawTime = timeString.replaceAll(RegExp(r' AM| PM'), '');
+      int hour = int.parse(rawTime.substring(0, 2));
+      int minute = int.parse(rawTime.substring(3, 5));
+      if (!isAm && hour != 12) hour += 12;
+      if (isAm && hour == 12) hour = 0;
+      
+      final now = DateTime.now();
+      final nowMinutes = now.hour * 60 + now.minute;
+      final scheduledMinutes = hour * 60 + minute;
+      return nowMinutes >= scheduledMinutes;
     } catch (e) {
       return false;
     }
