@@ -2422,7 +2422,7 @@ class _ResendModalState extends State<_ResendModal> {
     final originalName = widget.email.scheduleName ?? 'Resend Schedule';
     final resendName = originalName.contains('(Resend)') ? originalName : '$originalName (Resend)';
     final newEmail = widget.email.copyWith(
-      id: DateTime.now().millisecondsSinceEpoch.toString(), // Create new schedule
+      id: widget.email.id, // Overwrite existing schedule
       scheduleName: resendName,
       status: 'Scheduled',
       createdAt: '${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}',
@@ -2435,7 +2435,7 @@ class _ResendModalState extends State<_ResendModal> {
       clearQueuedAfter: true,
     );
     
-    await StorageService.saveEmail(newEmail); // Save as new instead of updating the old one
+    await StorageService.updateEmail(newEmail); // Overwrite the old one!
     if (mounted) Navigator.pop(context);
   }
 
