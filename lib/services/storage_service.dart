@@ -9,6 +9,7 @@ class StorageService {
 
   static Future<void> saveEmail(ScheduledEmail email) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     List<String> savedList = prefs.getStringList(_emailsKey) ?? [];
     savedList.add(email.toJson());
     await prefs.setStringList(_emailsKey, savedList);
@@ -19,6 +20,7 @@ class StorageService {
 
   static Future<List<ScheduledEmail>> getEmails() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     List<String> savedList = prefs.getStringList(_emailsKey) ?? [];
     return savedList.map((jsonStr) => ScheduledEmail.fromJson(jsonStr)).toList().reversed.toList();
   }
@@ -114,6 +116,7 @@ class StorageService {
 
   static Future<Map<String, int>> getAllDailyLimits() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     final date = prefs.getString('daily_sent_date');
     final today = _todayString();
     
@@ -141,6 +144,7 @@ class StorageService {
 
   static Future<void> incrementDailySentCount(String senderEmail) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     final limits = await getAllDailyLimits();
     
     int current = limits[senderEmail] ?? 0;

@@ -191,10 +191,8 @@ class BackgroundDispatcher {
       if (_isTimeArrived(email.scheduledDate, email.scheduledTime)) {
         if (!_isTimeOfDayArrived(email.scheduledTime)) continue;
 
-        if ((email.type == 'PDF' || email.isMerged) && email.dailyLimit > 0) {
-          final today = _todayString();
-          if (email.lastSentDate == today) continue;
-        }
+        final today = _todayString();
+        if (email.lastSentDate == today) continue;
 
         // ── Get a valid token for this sender ──────────────────────────
         final token = await _getFreshToken(email.senderEmail);
@@ -374,6 +372,15 @@ class BackgroundDispatcher {
 
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
+      
+      // Global Daily Limit Check
+      final globalUsage = await StorageService.getDailySentCount(email.senderEmail);
+      if (globalUsage >= 50) {
+        print('Dispatcher: Global limit reached for ${email.senderEmail}. Breaking loop.');
+        statuses[recipient] = 'pending'; // revert
+        break;
+      }
+
 
       // Update status BEFORE send (shows progress) but do NOT increment sentCount yet
       await StorageService.updateEmail(cur.copyWith(
@@ -419,18 +426,29 @@ class BackgroundDispatcher {
       }
     }
 
-    // All done — mark success
+    // All done or Limit Reached
     final latestList = await StorageService.getEmails();
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
     if (cur.status == 'Paused') return;
 
-    await StorageService.updateEmail(cur.copyWith(
-      status: 'Success',
-      sentCount: total,
-      lastSentDate: today,
-      recipientStatuses: Map.from(statuses),
-    ));
-    print('Dispatcher: Multiple email ${email.id} completed — $total/$total sent');
+    final today = _todayString();
+    final finalCount = cur.sentCount;
+    if (finalCount >= total) {
+      await StorageService.updateEmail(cur.copyWith(
+        status: 'Success',
+        lastSentDate: today,
+        recipientStatuses: Map.from(statuses),
+      ));
+      print('Dispatcher: Email ${email.id} completed — $total/$total sent');
+    } else {
+      final daysDone = email.dailyLimit > 0 ? (finalCount / email.dailyLimit).ceil() : 1;
+      await StorageService.updateEmail(cur.copyWith(
+        status: 'Limit Reached: Day $daysDone ($finalCount/$total sent). Resumes tomorrow.',
+        lastSentDate: today,
+        recipientStatuses: Map.from(statuses),
+      ));
+      print('Dispatcher: Email ${email.id} stopped at $finalCount/$total');
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -460,6 +478,15 @@ class BackgroundDispatcher {
 
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
+      
+      // Global Daily Limit Check
+      final globalUsage = await StorageService.getDailySentCount(email.senderEmail);
+      if (globalUsage >= 50) {
+        print('Dispatcher: Global limit reached for ${email.senderEmail}. Breaking loop.');
+        statuses[recipient] = 'pending'; // revert
+        break;
+      }
+
 
       await StorageService.updateEmail(cur.copyWith(
         status: 'Doing it... (${i + 1}/$total)',
@@ -565,6 +592,15 @@ class BackgroundDispatcher {
 
       final recipient = email.recipients[i];
       statuses[recipient] = 'inProcess';
+      
+      // Global Daily Limit Check
+      final globalUsage = await StorageService.getDailySentCount(email.senderEmail);
+      if (globalUsage >= 50) {
+        print('Dispatcher: Global limit reached for ${email.senderEmail}. Breaking loop.');
+        statuses[recipient] = 'pending'; // revert
+        break;
+      }
+
 
       await StorageService.updateEmail(cur.copyWith(
         status: 'Merge Day ${((i + 1) / dailyLimit).ceil()}: ${i + 1}/$total sending...',
@@ -610,25 +646,27 @@ class BackgroundDispatcher {
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
     if (cur.status == 'Paused') return;
 
-    final newCount = endIdx;
-    if (newCount >= total) {
+        final latestList = await StorageService.getEmails();
+    final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
+    if (cur.status == 'Paused') return;
+
+    final finalCount = cur.sentCount;
+    if (finalCount >= total) {
       await StorageService.updateEmail(cur.copyWith(
         status: 'Success',
-        sentCount: newCount,
         lastSentDate: today,
         recipientStatuses: Map.from(statuses),
       ));
       print('Dispatcher: Merged PDF ${email.id} completed — $total/$total sent');
     } else {
-      final daysDone = (newCount / dailyLimit).ceil();
-      final dayStatus = 'Merge Day $daysDone: $newCount/$total sent [$mergeLabel]';
+      final daysDone = dailyLimit > 0 ? (finalCount / dailyLimit).ceil() : 1;
+      final dayStatus = 'Merge Day $daysDone: $finalCount/$total sent [$mergeLabel]';
       await StorageService.updateEmail(cur.copyWith(
         status: dayStatus,
-        sentCount: newCount,
         lastSentDate: today,
         recipientStatuses: Map.from(statuses),
       ));
-      print('Dispatcher: Merged PDF ${email.id} day done — $newCount/$total sent');
+      print('Dispatcher: Merged PDF ${email.id} day/limit done — $finalCount/$total sent');
     }
   }
 
