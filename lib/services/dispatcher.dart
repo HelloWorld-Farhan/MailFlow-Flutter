@@ -431,7 +431,6 @@ class BackgroundDispatcher {
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
     if (cur.status == 'Paused') return;
 
-    final today = _todayString();
     final finalCount = cur.sentCount;
     if (finalCount >= total) {
       await StorageService.updateEmail(cur.copyWith(
@@ -646,11 +645,7 @@ class BackgroundDispatcher {
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
     if (cur.status == 'Paused') return;
 
-        final latestList = await StorageService.getEmails();
-    final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
-    if (cur.status == 'Paused') return;
-
-    final finalCount = cur.sentCount;
+        final finalCount = cur.sentCount;
     if (finalCount >= total) {
       await StorageService.updateEmail(cur.copyWith(
         status: 'Success',
