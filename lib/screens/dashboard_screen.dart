@@ -2364,6 +2364,19 @@ class _ResendModalState extends State<_ResendModal> {
   String? _dateMsg; bool _isDateErr = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.email.scheduledTime.isNotEmpty) {
+      final t = widget.email.scheduledTime;
+      final parts = t.split(' ');
+      if (parts.length == 2) {
+        _timeController.text = parts[0];
+        _isAm = parts[1] == 'AM';
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _dateController.dispose();
     _timeController.dispose();

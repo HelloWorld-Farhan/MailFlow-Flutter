@@ -41,6 +41,20 @@ class DateInputFormatter extends TextInputFormatter {
       if (month > 12 || month == 0) {
         return oldValue; // Invalid month
       }
+      
+      if (formattedText.length == 4) {
+        final now = DateTime.now();
+        int day = int.tryParse(formattedText.substring(0, 2)) ?? 0;
+        int targetYear = now.year;
+        if (month < now.month || (month == now.month && day < now.day)) {
+          targetYear = now.year + 1;
+        }
+        
+        bool isLeapYear = (targetYear % 4 == 0) && ((targetYear % 100 != 0) || (targetYear % 400 == 0));
+        if (!(month == 2 && day == 29 && !isLeapYear)) {
+          formattedText += targetYear.toString();
+        }
+      }
     }
 
     // Full Date Validation
