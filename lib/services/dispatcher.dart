@@ -532,25 +532,25 @@ class BackgroundDispatcher {
     final cur = latestList.firstWhere((e) => e.id == email.id, orElse: () => email);
     if (cur.status == 'Paused') return;
 
-    final newCount = endIdx;
-    if (newCount >= total) {
+    final finalCount = cur.sentCount;
+    if (finalCount >= total) {
       await StorageService.updateEmail(cur.copyWith(
         status: 'Success',
-        sentCount: newCount,
+        sentCount: finalCount,
         lastSentDate: today,
         recipientStatuses: Map.from(statuses),
       ));
       print('Dispatcher: PDF batch ${email.id} completed — $total/$total sent');
     } else {
-      final daysDone = (newCount / batchSize).ceil();
-      final dayStatus = 'Day $daysDone: $newCount/$total sent. Resumes tomorrow.';
+      final daysDone = batchSize > 0 ? (finalCount / batchSize).ceil() : 1;
+      final dayStatus = 'Day $daysDone: $finalCount/$total sent. Resumes tomorrow.';
       await StorageService.updateEmail(cur.copyWith(
         status: dayStatus,
-        sentCount: newCount,
+        sentCount: finalCount,
         lastSentDate: today,
         recipientStatuses: Map.from(statuses),
       ));
-      print('Dispatcher: PDF batch ${email.id} day done — $newCount/$total sent');
+      print('Dispatcher: PDF batch ${email.id} day done — $finalCount/$total sent');
     }
   }
 

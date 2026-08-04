@@ -2240,11 +2240,26 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                                     prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
                                   ),
                                 ),
-                                if (weekdayStr.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4, left: 4),
-                                    child: Text(weekdayStr, style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
-                                  ),
+                                Row(
+                                  children: [
+                                    if (weekdayStr.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4, left: 4),
+                                        child: Text(weekdayStr, style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                                      ),
+                                    const Spacer(),
+                                    GestureDetector(
+                                      onTap: () {
+                                        final tomorrow = DateTime.now().add(const Duration(days: 1));
+                                        _dateController.text = '${tomorrow.day.toString().padLeft(2, '0')}/${tomorrow.month.toString().padLeft(2, '0')}/${tomorrow.year}';
+                                      },
+                                      child: const Padding(
+                                        padding: EdgeInsets.only(top: 4, right: 4),
+                                        child: Text('Tomorrow', style: TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w700, fontFamily: 'Inter', decoration: TextDecoration.underline)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ],
                             );
                           },
@@ -2521,11 +2536,26 @@ class _ResendModalState extends State<_ResendModal> {
                                     prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
                                   ),
                                 ),
-                                if (weekdayStr.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4, left: 4),
-                                    child: Text(weekdayStr, style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
-                                  ),
+                                Row(
+                                  children: [
+                                    if (weekdayStr.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4, left: 4),
+                                        child: Text(weekdayStr, style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                                      ),
+                                    const Spacer(),
+                                    GestureDetector(
+                                      onTap: () {
+                                        final tomorrow = DateTime.now().add(const Duration(days: 1));
+                                        _dateController.text = '${tomorrow.day.toString().padLeft(2, '0')}/${tomorrow.month.toString().padLeft(2, '0')}/${tomorrow.year}';
+                                      },
+                                      child: const Padding(
+                                        padding: EdgeInsets.only(top: 4, right: 4),
+                                        child: Text('Tomorrow', style: TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w700, fontFamily: 'Inter', decoration: TextDecoration.underline)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ],
                             );
                           },
