@@ -283,6 +283,21 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
                   style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textLight),
                   overflow: TextOverflow.ellipsis)),
             ]),
+            if (email.pdfName != null && email.pdfName!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.picture_as_pdf_rounded, size: 14, color: AppTheme.textMid),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      email.pdfName!,
+                      style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textMid),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
         content: SizedBox(
@@ -610,6 +625,23 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
                     Text(displayName,
                         style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textDark),
                         maxLines: 1, overflow: TextOverflow.ellipsis),
+                    if (email.pdfName != null && email.pdfName!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.picture_as_pdf_rounded, size: 12, color: AppTheme.textMid),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              email.pdfName!,
+                              style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.textMid),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Row(children: [
                       Container(

@@ -17,10 +17,14 @@ import 'email_detail_screen.dart';
 import 'email_limit_screen.dart';
 import '../models/template_item.dart';
 import '../services/dispatcher.dart';
+import '../widgets/update_dialog.dart';
+import '../services/update_service.dart';
+import '../services/notification_service.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  DASHBOARD SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -57,15 +61,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _totalDailySent = 0;
 
   Timer? _refreshTimer;
+  String _currentVersion = '1.0.0';
+  bool _hasUpdate = false;
+  String? _latestVersion;
+  bool _bannerDismissed = false;
 
   @override
   void initState() {
     super.initState();
     _checkPermissions();
     _loadHistory();
+    _initVersionAndCheckUpdate();
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _loadHistory();
     });
+  }
+
+  Future<void> _initVersionAndCheckUpdate() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _currentVersion = info.version);
+    } catch (_) {}
+
+    final result = await UpdateService.checkForUpdates();
+    if (!mounted) return;
+    if (result.hasUpdate && result.latestRelease != null) {
+      setState(() {
+        _hasUpdate = true;
+        _latestVersion = result.latestRelease!.version;
+      });
+      // Trigger status bar notification with default sound & vibration
+      NotificationService.showUpdateNotification(
+        newVersion: _latestVersion!,
+        body: 'MailFlow v$_latestVersion is now ready. Tap to install.',
+      );
+    }
   }
 
   Future<void> _checkPermissions() async {
@@ -213,17 +243,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // ── App Bar ───────────────────────────────────────────────────
+          // â”€â”€ App Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           SliverAppBar(
             floating: true,
             backgroundColor: AppTheme.bgWhite,
             elevation: 0,
             surfaceTintColor: Colors.transparent,
             title: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 36,
-                  height: 36,
+                  width: 34,
+                  height: 34,
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
@@ -231,33 +262,101 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   child: Image.asset('assets/Logo.png'),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 const Text(
                   'MailFlow',
                   style: TextStyle(
-                    fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700,
+                    fontFamily: 'Outfit', fontSize: 19, fontWeight: FontWeight.w700,
                     color: AppTheme.textDark,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryBlue.withOpacity(0.09),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.20)),
+                  ),
+                  child: Text(
+                    'v$_currentVersion',
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.primaryBlue,
+                      letterSpacing: 0.3,
+                    ),
                   ),
                 ),
               ],
             ),
             actions: [
+              Stack(
+                alignment: Alignment.topRight,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.system_update_alt_rounded, color: AppTheme.primaryBlue, size: 22),
+                    tooltip: 'Check for Updates',
+                    onPressed: () => UpdateDialog.show(context),
+                  ),
+                  if (_hasUpdate)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: const BoxDecoration(
+                          color: AppTheme.errorRed,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               IconButton(
-                icon: const Icon(Icons.group_outlined, color: AppTheme.textMid),
+                icon: const Icon(Icons.group_outlined, color: AppTheme.textMid, size: 22),
                 tooltip: 'Email Groups',
                 onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmailDetailScreen())),
               ),
               IconButton(
-                icon: const Icon(Icons.data_usage_rounded, color: AppTheme.textMid),
+                icon: const Icon(Icons.data_usage_rounded, color: AppTheme.textMid, size: 22),
                 tooltip: 'Email Limits',
                 onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmailLimitScreen())),
               ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined, color: AppTheme.textMid),
-                tooltip: 'Settings',
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert_rounded, color: AppTheme.textMid, size: 22),
+                tooltip: 'More',
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                onSelected: (val) {
+                  if (val == 'contacts') _showAllContacts();
+                  if (val == 'settings') Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'contacts',
+                    child: Row(
+                      children: [
+                        Icon(Icons.contacts_outlined, color: AppTheme.primaryBlue, size: 18),
+                        SizedBox(width: 10),
+                        Text('Saved Contacts', style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'settings',
+                    child: Row(
+                      children: [
+                        Icon(Icons.settings_outlined, color: AppTheme.textMid, size: 18),
+                        SizedBox(width: 10),
+                        Text('Settings & Templates', style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
             ],
             bottom: const PreferredSize(
               preferredSize: Size.fromHeight(1),
@@ -265,7 +364,82 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
 
-          // ── Header hero card ──────────────────────────────────────────
+          // ── Update Notification Banner (Zero overlap, dismissible) ────────
+          if (_hasUpdate && !_bannerDismissed)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.bgSurface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.30)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryBlue.withOpacity(0.08),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.campaign_rounded, color: AppTheme.primaryBlue, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => UpdateDialog.show(context),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Update Available: v${_latestVersion ?? "New"}',
+                                style: const TextStyle(
+                                  fontFamily: 'Outfit',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.textDark,
+                                ),
+                              ),
+                              const Text(
+                                'Tap to download and install new features',
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 11,
+                                  color: AppTheme.textMid,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => UpdateDialog.show(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryBlue,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text('Update', style: TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                      const SizedBox(width: 4),
+                      InkWell(
+                        onTap: () => setState(() => _bannerDismissed = true),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(Icons.close_rounded, size: 16, color: AppTheme.textLight),
+                        ),
+                      ),
+                    ],
+                  ),
+                ).animate().fade(duration: 400.ms).slideY(begin: -0.2, end: 0.0),
+              ),
+            ),
+
+          // â”€â”€ Header hero card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
@@ -337,7 +511,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
 
-          // ── Stats row ─────────────────────────────────────────────────
+          // â”€â”€ Stats row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -371,7 +545,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
 
-          // ── Section title ─────────────────────────────────────────────
+          // â”€â”€ Section title â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
@@ -396,7 +570,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
 
-          // ── Email list ────────────────────────────────────────────────
+          // â”€â”€ Email list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           _isLoading
               ? const SliverFillRemaining(
                   child: Center(child: CircularProgressIndicator()),
@@ -432,9 +606,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  HELPER WIDGETS
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _StatChip extends StatelessWidget {
   final IconData icon;
   final String label, value;
@@ -614,7 +788,7 @@ class _EmailCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 6),
                             Expanded(child: Text(
-                              '${item.recipients.length} recipient${item.recipients.length == 1 ? '' : 's'}  •  ${item.scheduledDate}',
+                              '${item.recipients.length} recipient${item.recipients.length == 1 ? '' : 's'}  â€¢  ${item.scheduledDate}',
                               style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textLight),
                               maxLines: 1, overflow: TextOverflow.ellipsis,
                             )),
@@ -644,10 +818,10 @@ class _EmailCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Row(children: [
-                           // Resend button — show when done or failed
+                           // Resend button â€” show when done or failed
                           if (_isSuccess || _isFailed || item.status.startsWith('Daily limit'))
                             _ActionBtn(icon: Icons.replay_circle_filled_rounded, color: AppTheme.primaryBlue, onTap: onResend),
-                          // Edit button — show for everything except completed
+                          // Edit button â€” show for everything except completed
                           if (!_isSuccess && !_isFailed)
                             _ActionBtn(icon: Icons.edit_rounded, color: AppTheme.primaryBlue, onTap: onEdit),
                           if (_isPdfCampaign && _isActive)
@@ -982,18 +1156,12 @@ class _DetailsDialogState extends State<_DetailsDialog> {
     );
   }
 
-  Widget _sectionLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(text, style: const TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue)),
-    );
-  }
 }
 
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  SCHEDULE MODAL
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _ScheduleModal extends StatefulWidget {
   final ScheduledEmail? editEmail;
   const _ScheduleModal({this.editEmail});
@@ -1313,6 +1481,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       scheduledDate: _dateController.text,
       scheduledTime: '${_timeController.text} ${_isAm ? "AM" : "PM"}',
       scheduleName: _scheduleNameController.text.trim(),
+      pdfName: _sendType == 'PDF' ? _pdfPath : null,
       dailyLimit: dailyLimit,
       sentCount: widget.editEmail?.sentCount ?? 0,
       lastSentDate: widget.editEmail?.lastSentDate,
@@ -1320,11 +1489,11 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       createdAt: widget.editEmail?.createdAt ?? '${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}',
     );
 
-    // ── PDF Conflict check for future dates ────────────────────────────
+    // â”€â”€ PDF Conflict check for future dates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (_sendType == 'PDF' && widget.editEmail == null) {
       final conflict = await _checkPdfConflict(newEmail);
       if (conflict != null && mounted) {
-        // Show resolution dialog — it will handle saving
+        // Show resolution dialog â€” it will handle saving
         _showConflictDialog(newEmail, conflict);
         return;
       }
@@ -1501,6 +1670,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       scheduledDate: existingPdf.scheduledDate, // start from existing PDF's date
       scheduledTime: existingPdf.scheduledTime,
       scheduleName: 'Merge: $existingName + $newName',
+      pdfName: existingPdf.pdfName ?? existingPdf.scheduleName ?? 'Merged PDF',
       dailyLimit: dailyLimit,
       sentCount: existingPdf.sentCount, // already sent from existing
       lastSentDate: existingPdf.lastSentDate,
@@ -1510,7 +1680,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       mergeSourceNames: {existingPdf.id: existingName, newPdf.id: newName},
     );
 
-    // Delete BOTH original PDFs — only the merged campaign should remain
+    // Delete BOTH original PDFs â€” only the merged campaign should remain
     await StorageService.deleteEmail(existingPdf.id);
     await StorageService.deleteEmail(newPdf.id);
     // Save merged schedule
@@ -1577,7 +1747,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   ),
                   const SizedBox(height: 20),
 
-                  // ── Section 1: Name ──────────────────────────────
+                  // â”€â”€ Section 1: Name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _SectionHeader(title: '1  Schedule Name', icon: Icons.label_outline),
                   const SizedBox(height: 10),
                   TextField(
@@ -1590,7 +1760,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   _buildFieldMsg(_scheduleNameMsg, _isScheduleNameErr),
                   const SizedBox(height: 24),
 
-                  // ── Section 2: Sender ──────────────────────────────
+                  // â”€â”€ Section 2: Sender â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _SectionHeader(title: '2  Sender Account', icon: Icons.account_circle_rounded),
                   const SizedBox(height: 10),
                   Autocomplete<String>(
@@ -1779,7 +1949,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                           if (_dateQuotaFull) ...[
                             const SizedBox(height: 6),
                             const Text(
-                              '⚠️ This sender has already sent 50 emails today. Please use a different sender email.',
+                              'âš ï¸ This sender has already sent 50 emails today. Please use a different sender email.',
                               style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontSize: 11,
@@ -1806,7 +1976,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   ],
                   const SizedBox(height: 24),
 
-                  // ── Section 3: Recipients ──────────────────────────
+                  // â”€â”€ Section 3: Recipients â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _SectionHeader(title: '3  Recipients', icon: Icons.group_rounded),
                   const SizedBox(height: 10),
                   // Type selector
@@ -1927,7 +2097,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  '${_pdfEmails.length} emails extracted — tap to ${_showPdfEmails ? 'hide' : 'review & edit'}',
+                                  '${_pdfEmails.length} emails extracted â€” tap to ${_showPdfEmails ? 'hide' : 'review & edit'}',
                                   style: const TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.successGreen),
                                 ),
                               ),
@@ -2053,7 +2223,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     ),
                     _buildFieldMsg(_dailyLimitMsg, _isDailyLimitErr),
                   ],
-                  // ── Delay Between Emails (Anti-Spam) ──────────────────
+                  // â”€â”€ Delay Between Emails (Anti-Spam) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   if (_sendType == 'Multiple' || _sendType == 'PDF') ...[
                     const SizedBox(height: 16),
                     Container(
@@ -2124,7 +2294,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   ],
                   const SizedBox(height: 24),
 
-                  // ── Section 4: Email content ───────────────────────
+                  // â”€â”€ Section 4: Email content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _SectionHeader(title: '4  Email Content', icon: Icons.edit_note_rounded),
                   const SizedBox(height: 10),
                   Row(
@@ -2190,7 +2360,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       minLines: 8,
                       maxLines: 15,
                       decoration: const InputDecoration(
-                        hintText: 'Write your HTML email body here… (e.g. <b>Hello</b>)',
+                        hintText: 'Write your HTML email body hereâ€¦ (e.g. <b>Hello</b>)',
                         alignLabelWithHint: true,
                         contentPadding: EdgeInsets.all(16),
                       ),
@@ -2217,7 +2387,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   ],
                   const SizedBox(height: 24),
 
-                  // ── Section 5: Schedule time ───────────────────────
+                  // â”€â”€ Section 5: Schedule time â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _SectionHeader(title: '5  Schedule Date & Time', icon: Icons.schedule_rounded),
                   const SizedBox(height: 10),
                   Row(
@@ -2361,9 +2531,9 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  RESEND MODAL
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _ResendModal extends StatefulWidget {
   final ScheduledEmail email;
   const _ResendModal({required this.email});
@@ -2758,7 +2928,7 @@ class _AnimatedDropdownPicker extends StatelessWidget {
   }
 }
 
-// ── Conflict Resolution Option Widget ────────────────────────────────────────
+// â”€â”€ Conflict Resolution Option Widget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _ConflictOption extends StatefulWidget {
   final IconData icon;
   final Color color;

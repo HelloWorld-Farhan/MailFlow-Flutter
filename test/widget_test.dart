@@ -1,30 +1,32 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:mailflow/main.dart';
+import 'package:mailflow/theme/app_theme.dart';
+import 'package:mailflow/services/update_service.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MailFlowApp());
+  test('UpdateService release parser test', () {
+    final release = ReleaseInfo.fromJson({
+      'tag_name': 'v1.0.1',
+      'name': 'MailFlow v1.0.1',
+      'body': 'Initial update release',
+      'published_at': '2026-11-03T00:00:00Z',
+      'assets': [
+        {
+          'name': 'app-release.apk',
+          'size': 25000000,
+          'browser_download_url': 'https://github.com/HelloWorld-Farhan/MailFlow-Flutter/releases/download/v1.0.1/app-release.apk',
+        }
+      ]
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(release.version, '1.0.1');
+    expect(release.apkDownloadUrl, contains('.apk'));
+    expect(release.apkSize, 25000000);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  testWidgets('AppTheme light theme initializes properly', (WidgetTester tester) async {
+    final theme = AppTheme.lightTheme;
+    expect(theme.primaryColor, AppTheme.primaryBlue);
+    expect(theme.scaffoldBackgroundColor, Colors.white);
   });
 }

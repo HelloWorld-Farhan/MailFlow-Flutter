@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/template_item.dart';
 import '../services/storage_service.dart';
+import 'package:flutter/services.dart' as import_services;
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -227,6 +228,15 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                IconButton(
+                  icon: const Icon(Icons.copy_rounded, color: AppTheme.textMid),
+                  onPressed: () {
+                    import_services.Clipboard.setData(import_services.ClipboardData(text: item.content));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Content copied to clipboard', style: TextStyle(fontFamily: 'Inter'))),
+                    );
+                  },
+                ),
                 IconButton(
                   icon: const Icon(Icons.edit_rounded, color: AppTheme.primaryBlue),
                   onPressed: () => _showTemplateModal(editItem: item, type: type),
