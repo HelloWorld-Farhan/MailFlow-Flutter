@@ -47,8 +47,9 @@ jobs:
         run: |
           if [ -n "$KS_B64" ]; then
             printf '%s' "$KS_B64" | tr -d '[:space:]' | base64 --decode > android/app/release-keystore.jks
+            echo "Decoded keystore bytes: $(wc -c < android/app/release-keystore.jks), b64 len: ${#KS_B64}"
             echo "MAILFLOW_KEYSTORE_PATH=$GITHUB_WORKSPACE/android/app/release-keystore.jks" >> "$GITHUB_ENV"
-            if ! keytool -list -keystore android/app/release-keystore.jks -alias "$KS_ALIAS" -storepass "$KS_PASS" >/dev/null 2>&1; then
+            if ! keytool -list -keystore android/app/release-keystore.jks -alias "$KS_ALIAS" -storepass "$KS_PASS"; then
               echo "::error::ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, or ANDROID_KEY_ALIAS secret does not match! Update all 4 ANDROID_KEY* secrets from github_keystore_secrets.txt."
               exit 1
             fi
