@@ -17,6 +17,7 @@ class BackendService {
   static WebSocket? _socket;
   static Timer? _heartbeatTimer;
   static Timer? _reconnectTimer;
+  static Timer? _realtimeDebounce;
   static bool _realtimeWanted = false;
   static int _refCounter = 1;
 
@@ -296,6 +297,7 @@ class BackendService {
     _realtimeWanted = false;
     _heartbeatTimer?.cancel();
     _reconnectTimer?.cancel();
+    _realtimeDebounce?.cancel();
     await _socket?.close();
     _socket = null;
   }
@@ -347,7 +349,10 @@ class BackendService {
           try {
             final msg = jsonDecode(raw.toString()) as Map<String, dynamic>;
             if (msg['event'] == 'postgres_changes') {
-              _changesController.add(null);
+              _realtimeDebounce?.cancel();
+              _realtimeDebounce = Timer(const Duration(milliseconds: 120), () {
+                _changesController.add(null);
+              });
             }
           } catch (_) {}
         },

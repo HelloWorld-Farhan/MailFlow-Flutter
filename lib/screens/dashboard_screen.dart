@@ -42,7 +42,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _totalDailySent = 0;
 
   Timer? _refreshTimer;
+  Timer? _alertDismissTimer;
   StreamSubscription<void>? _realtimeSub;
+  StreamSubscription<void>? _storageSub;
+  CampaignNotificationEvent? _latestAlert;
   String _currentVersion = '1.0.0';
   bool _hasUpdate = false;
   String? _latestVersion;
@@ -56,8 +59,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _initVersionAndCheckUpdate();
     if (AppConfig.isBackendEnabled) {
       _realtimeSub = BackendService.onDataChanged.listen((_) => _loadHistory());
+      _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+        _loadHistory();
+      });
     } else {
-      _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _storageSub = StorageService.onDataChanged.listen((_) => _loadHistory());
+      _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
         _loadHistory();
       });
     }
@@ -86,6 +93,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _checkPermissions() async {
     if (kIsWeb || !Platform.isAndroid) return;
+    if (await Permission.notification.isDenied) {
+      await Permission.notification.request();
+    }
     if (await Permission.scheduleExactAlarm.isDenied) {
       await Permission.scheduleExactAlarm.request();
     }
@@ -94,8 +104,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _realtimeSub?.cancel();
+    _storageSub?.cancel();
     _refreshTimer?.cancel();
+    _alertDismissTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _applyLoadedHistory(List<ScheduledEmail> history, int totalSent) async {
+    final events = await NotificationService.handleSnapshot(history);
+    if (!mounted) return;
+    setState(() {
+      _history = history;
+      _totalDailySent = totalSent;
+      _isLoading = false;
+      if (events.isNotEmpty) {
+        _latestAlert = events.last;
+      }
+    });
+    if (events.isNotEmpty) {
+      _alertDismissTimer?.cancel();
+      _alertDismissTimer = Timer(const Duration(seconds: 6), () {
+        if (mounted) setState(() => _latestAlert = null);
+      });
+    }
   }
 
   Future<void> _loadHistory() async {
@@ -106,12 +137,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           BackendService.fetchDailyLimits(),
         ).wait;
         final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
-        if (!mounted) return;
-        setState(() {
-          _history = history;
-          _totalDailySent = totalSent;
-          _isLoading = false;
-        });
+        await _applyLoadedHistory(history, totalSent);
       } catch (_) {
         if (mounted) setState(() => _isLoading = false);
       }
@@ -125,13 +151,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       StorageService.getAllDailyLimits(),
     ).wait;
     final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
-    
-    if (!mounted) return;
-    setState(() {
-      _history = history;
-      _totalDailySent = totalSent;
-      _isLoading = false;
-    });
+    await _applyLoadedHistory(history, totalSent);
   }
 
   void _openScheduleModal({ScheduledEmail? existingEmail}) {
@@ -145,6 +165,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _openResendModal(ScheduledEmail email) {
+    NotificationService.clearCampaignAlertState(email.id);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -223,6 +244,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       forceWeekend = true;
     }
 
+    NotificationService.clearCampaignAlertState(email.id);
     if (AppConfig.isBackendEnabled) {
       await BackendService.resumeCampaign(email.id, forceWeekend: forceWeekend);
       _loadHistory();
@@ -462,7 +484,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
 
-          // â”€â”€ Header hero card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+          // ── In-App Live Sending / Parallel Activity Notification Hub ─────
+          ...() {
+            final active = _history
+                .where((e) => SendNotificationMonitor.isActiveStatus(e.status))
+                .toList();
+            if (active.isEmpty && _latestAlert == null) return const <Widget>[];
+            return <Widget>[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Column(
+                    children: [
+                      if (_latestAlert != null)
+                        _RealtimeEventBanner(
+                          event: _latestAlert!,
+                          onTap: () => _showEmailDetails(_latestAlert!.email),
+                          onDismiss: () => setState(() => _latestAlert = null),
+                        ),
+                      if (_latestAlert != null && active.isNotEmpty)
+                        const SizedBox(height: 10),
+                      if (active.isNotEmpty)
+                        _LiveParallelSendingPanel(
+                          activeCampaigns: active,
+                          onTapCampaign: _showEmailDetails,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ];
+          }(),
+
+          // ── Header hero card ──────────────────────────────────────────
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
@@ -632,6 +686,240 @@ class _DashboardScreenState extends State<DashboardScreen> {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  HELPER WIDGETS
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+class _RealtimeEventBanner extends StatelessWidget {
+  final CampaignNotificationEvent event;
+  final VoidCallback onTap;
+  final VoidCallback onDismiss;
+  const _RealtimeEventBanner({
+    required this.event,
+    required this.onTap,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDone = event.kind == CampaignEventKind.completed;
+    final bool isFailed = event.kind == CampaignEventKind.failed;
+    final Color color = isDone
+        ? AppTheme.successGreen
+        : (isFailed ? AppTheme.errorRed : AppTheme.primaryBlue);
+    final IconData icon = isDone
+        ? Icons.check_circle_rounded
+        : (isFailed ? Icons.error_rounded : Icons.notifications_active_rounded);
+    final String title = isDone
+        ? 'Done: ${event.displayName}'
+        : (isFailed ? 'Failed: ${event.displayName}' : 'Sending Started: ${event.displayName}');
+    final String subtitle = isDone
+        ? 'All ${event.email.sentCount}/${event.email.recipients.length} emails sent'
+        : (isFailed
+            ? event.email.status
+            : '${event.email.recipients.length} recipient${event.email.recipients.length == 1 ? '' : 's'}'
+                '${event.activeParallelCount > 1 ? ' • ${event.activeParallelCount} running in parallel' : ''}');
+
+    return Material(
+      color: color.withOpacity(0.08),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withOpacity(0.35)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Outfit',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11,
+                        color: AppTheme.textMid,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              InkWell(
+                onTap: onDismiss,
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close_rounded, size: 16, color: AppTheme.textLight),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).animate().fade(duration: 250.ms).slideY(begin: -0.15, end: 0);
+  }
+}
+
+class _LiveParallelSendingPanel extends StatelessWidget {
+  final List<ScheduledEmail> activeCampaigns;
+  final void Function(ScheduledEmail) onTapCampaign;
+  const _LiveParallelSendingPanel({
+    required this.activeCampaigns,
+    required this.onTapCampaign,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isParallel = activeCampaigns.length > 1;
+    final totalSent = activeCampaigns.fold<int>(0, (s, e) => s + e.sentCount);
+    final totalRecipients = activeCampaigns.fold<int>(0, (s, e) => s + e.recipients.length);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryBlue.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  color: AppTheme.successGreen,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isParallel
+                      ? '${activeCampaigns.length} Parallel Dispatches Running Live'
+                      : 'Sending Live in Real Time',
+                  style: const TextStyle(
+                    fontFamily: 'Outfit',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryBlue,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$totalSent / $totalRecipients sent',
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...activeCampaigns.map((item) {
+            final total = item.recipients.length;
+            final sent = item.sentCount.clamp(0, total);
+            final ratio = total > 0 ? sent / total : 0.0;
+            final current = SendNotificationMonitor.currentRecipient(item);
+            final title = (item.scheduleName != null && item.scheduleName!.trim().isNotEmpty)
+                ? item.scheduleName!
+                : (item.subject.isNotEmpty ? item.subject : item.senderEmail);
+            return InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => onTapCampaign(item),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 6, bottom: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '$title  •  ${item.senderEmail}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textDark,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '$sent/$total',
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.primaryBlue,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (current != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Sending to $current...',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 11,
+                            color: AppTheme.textMid,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 5),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: ratio > 0 ? ratio : null,
+                        backgroundColor: AppTheme.primaryBlue.withOpacity(0.14),
+                        valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
+                        minHeight: 4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    ).animate().fade(duration: 250.ms);
+  }
+}
+
 class _StatChip extends StatelessWidget {
   final IconData icon;
   final String label, value;
@@ -859,8 +1147,8 @@ class _EmailCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                // Progress bar for PDF campaigns
-                if (_isPdfCampaign && !_isSuccess && total > 0) ...[
+                // Progress bar for active or multi-day PDF campaigns
+                if ((_isPdfCampaign || _isActive) && !_isSuccess && total > 0) ...[
                   const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,

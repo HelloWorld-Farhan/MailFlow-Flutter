@@ -9,6 +9,7 @@ import '../models/scheduled_email.dart';
 import '../utils/date_helpers.dart';
 import 'app_config.dart';
 import 'mail_service.dart';
+import 'notification_service.dart';
 import 'storage_service.dart';
 
 @pragma('vm:entry-point')
@@ -23,6 +24,7 @@ class BackgroundDispatcher {
   static const Duration _tokenCacheTtl = Duration(minutes: 45);
   static final Map<String, GoogleSignIn> _signInCache = {};
   static final Map<String, ({String token, DateTime fetchedAt})> _tokenCache = {};
+  static final Set<String> _inFlightIds = {};
 
   static GoogleSignIn _getSignIn(String senderEmail) {
     return _signInCache.putIfAbsent(senderEmail, () {
@@ -105,7 +107,9 @@ class BackgroundDispatcher {
     bool resetAny = false;
     for (final email in emails) {
       final isStuck = email.status.startsWith('Doing') || email.status.startsWith('Sending');
-      if (isStuck && nowEpoch - email.lastUpdateEpoch > 10 * 60 * 1000) {
+      if (isStuck &&
+          !_inFlightIds.contains(email.id) &&
+          nowEpoch - email.lastUpdateEpoch > 10 * 60 * 1000) {
         await StorageService.updateEmail(email.copyWith(status: 'Scheduled'));
         resetAny = true;
       }
@@ -116,7 +120,11 @@ class BackgroundDispatcher {
     final now = DateTime.now();
     final isWeekend = now.weekday == DateTime.saturday || now.weekday == DateTime.sunday;
 
+    // Pick at most one due campaign per distinct sender so different senders run in parallel.
+    final bySender = <String, ScheduledEmail>{};
+
     for (final email in freshEmails) {
+      if (_inFlightIds.contains(email.id)) continue;
       if (email.status == 'Success' ||
           email.status == 'Failed' ||
           email.status == 'Paused' ||
@@ -159,17 +167,41 @@ class BackgroundDispatcher {
       if (_isTimeArrived(email.scheduledDate, email.scheduledTime) &&
           _isTimeOfDayArrived(email.scheduledTime) &&
           email.lastSentDate != today) {
-        final token = await _getFreshToken(email.senderEmail);
-        if (token == null || token.isEmpty) {
-          await StorageService.updateEmail(email.copyWith(
-            status: 'Failed: Please open the app and re-authenticate ${email.senderEmail}',
-          ));
-          continue;
-        }
-
-        await _processEmailWithToken(email, token);
-        if (email.type != 'Single') break;
+        bySender.putIfAbsent(email.senderEmail, () => email);
       }
+    }
+
+    if (bySender.isEmpty) return;
+
+    final parallelTotal = bySender.length + _inFlightIds.length;
+    await Future.wait(bySender.values.map((email) => _launchCampaign(email, parallelTotal)));
+  }
+
+  static Future<void> _launchCampaign(ScheduledEmail email, int parallelCount) async {
+    _inFlightIds.add(email.id);
+    try {
+      final token = await _getFreshToken(email.senderEmail);
+      if (token == null || token.isEmpty) {
+        final failed = email.copyWith(
+          status: 'Failed: Please open the app and re-authenticate ${email.senderEmail}',
+        );
+        await StorageService.updateEmail(failed);
+        await NotificationService.showSendingDoneNotification(
+          failed,
+          failed: true,
+          parallelRemaining: max(0, _inFlightIds.length - 1),
+        );
+        return;
+      }
+
+      NotificationService.clearCampaignAlertState(email.id);
+      await NotificationService.showSendingStartedNotification(
+        email,
+        parallelCount: parallelCount,
+      );
+      await _processEmailWithToken(email, token);
+    } finally {
+      _inFlightIds.remove(email.id);
     }
   }
 
@@ -247,7 +279,12 @@ class BackgroundDispatcher {
     final recipient = email.recipients.isNotEmpty ? email.recipients[0] : '';
     final statuses = Map<String, String>.from(email.recipientStatuses);
     if (recipient.isNotEmpty) statuses[recipient] = 'inProcess';
-    await StorageService.updateEmail(email.copyWith(status: 'Sending...', recipientStatuses: statuses));
+    final started = email.copyWith(status: 'Sending...', recipientStatuses: statuses);
+    await StorageService.updateEmail(started);
+    await NotificationService.showSendingProgressNotification(
+      started,
+      parallelCount: max(1, _inFlightIds.length),
+    );
 
     final single = email.copyWith(recipients: [recipient]);
     final retryResult = await _sendOneWithRetry(single, token);
@@ -255,10 +292,17 @@ class BackgroundDispatcher {
     final success = result == 'Success';
 
     if (recipient.isNotEmpty) statuses[recipient] = success ? 'sent' : 'failed';
-    await StorageService.updateEmail(email.copyWith(
+    final finished = email.copyWith(
       status: success ? 'Success' : 'Failed: $result',
+      sentCount: success ? 1 : 0,
       recipientStatuses: statuses,
-    ));
+    );
+    await StorageService.updateEmail(finished);
+    await NotificationService.showSendingDoneNotification(
+      finished,
+      failed: !success,
+      parallelRemaining: max(0, _inFlightIds.length - 1),
+    );
   }
 
   static Future<void> _sendBatch(ScheduledEmail email, String token) async {
@@ -293,11 +337,16 @@ class BackgroundDispatcher {
       }
 
       statuses[recipient] = 'inProcess';
-      await StorageService.updateEmail(cur.copyWith(
+      final sendingState = cur.copyWith(
         status: statusLabel(i, 'sending...'),
         sentCount: i,
         recipientStatuses: Map.from(statuses),
-      ));
+      );
+      await StorageService.updateEmail(sendingState);
+      await NotificationService.showSendingProgressNotification(
+        sendingState,
+        parallelCount: max(1, _inFlightIds.length),
+      );
 
       final single = email.copyWith(recipients: [recipient]);
       String result;
@@ -318,11 +367,16 @@ class BackgroundDispatcher {
         statuses[recipient] = 'failed ($result)';
       }
 
-      await StorageService.updateEmail(cur.copyWith(
+      final afterState = cur.copyWith(
         status: statusLabel(i, 'sent'),
         sentCount: i + 1,
         recipientStatuses: Map.from(statuses),
-      ));
+      );
+      await StorageService.updateEmail(afterState);
+      await NotificationService.showSendingProgressNotification(
+        afterState,
+        parallelCount: max(1, _inFlightIds.length),
+      );
 
       if (email.delayMinutes > 0 && i < endIdx - 1) {
         await Future.delayed(Duration(minutes: email.delayMinutes));
@@ -335,11 +389,16 @@ class BackgroundDispatcher {
 
     final finalCount = cur.sentCount;
     if (finalCount >= total) {
-      await StorageService.updateEmail(cur.copyWith(
+      final completed = cur.copyWith(
         status: 'Success',
         lastSentDate: today,
         recipientStatuses: Map.from(statuses),
-      ));
+      );
+      await StorageService.updateEmail(completed);
+      await NotificationService.showSendingDoneNotification(
+        completed,
+        parallelRemaining: max(0, _inFlightIds.length - 1),
+      );
       return;
     }
 
@@ -356,11 +415,16 @@ class BackgroundDispatcher {
       dayStatus = 'Limit Reached: Day $daysDone ($finalCount/$total sent). Resumes tomorrow.';
     }
 
-    await StorageService.updateEmail(cur.copyWith(
+    final partial = cur.copyWith(
       status: dayStatus,
       lastSentDate: today,
       recipientStatuses: Map.from(statuses),
-    ));
+    );
+    await StorageService.updateEmail(partial);
+    await NotificationService.showSendingDoneNotification(
+      partial,
+      parallelRemaining: max(0, _inFlightIds.length - 1),
+    );
   }
 
   static bool _isTimeArrived(String dateString, String timeString) {

@@ -5,6 +5,7 @@ import 'screens/splash_screen.dart';
 import 'services/app_config.dart';
 import 'services/backend_service.dart';
 import 'services/dispatcher.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +14,7 @@ void main() async {
     statusBarIconBrightness: Brightness.dark,
   ));
   await AppConfig.load();
+  await NotificationService.initialize();
   if (AppConfig.isBackendEnabled) {
     await BackendService.startRealtime();
   } else {

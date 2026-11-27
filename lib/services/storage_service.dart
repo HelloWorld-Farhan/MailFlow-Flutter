@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scheduled_email.dart';
@@ -7,41 +8,65 @@ import 'dispatcher.dart';
 
 class StorageService {
   static const String _emailsKey = 'scheduled_emails_history';
+  static final StreamController<void> _changesController =
+      StreamController<void>.broadcast();
+  static Stream<void> get onDataChanged => _changesController.stream;
+
+  // Serializes read-modify-write operations on SharedPreferences so parallel senders never race.
+  static Future<void> _writeQueue = Future.value();
+
+  static Future<T> _synchronized<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _writeQueue = _writeQueue.then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (e, st) {
+        completer.completeError(e, st);
+      }
+    });
+    return completer.future;
+  }
 
   static Future<void> saveEmail(ScheduledEmail email) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    List<String> savedList = prefs.getStringList(_emailsKey) ?? [];
-    savedList.add(email.toJson());
-    await prefs.setStringList(_emailsKey, savedList);
-    
-    // Automatically schedule exact alarm for this new email
+    await _synchronized(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      final savedList = prefs.getStringList(_emailsKey) ?? [];
+      savedList.add(email.toJson());
+      await prefs.setStringList(_emailsKey, savedList);
+    });
+    _changesController.add(null);
     BackgroundDispatcher.scheduleExactAlarmForEmail(email);
   }
 
   static Future<List<ScheduledEmail>> getEmails() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-    List<String> savedList = prefs.getStringList(_emailsKey) ?? [];
+    final savedList = prefs.getStringList(_emailsKey) ?? [];
     return savedList.map((jsonStr) => ScheduledEmail.fromJson(jsonStr)).toList().reversed.toList();
   }
 
   static Future<void> deleteEmail(String id) async {
-    final emails = await getEmails();
-    emails.removeWhere((email) => email.id == id);
-    final prefs = await SharedPreferences.getInstance();
-    // Re-reverse back to original order before saving
-    await prefs.setStringList(_emailsKey, emails.reversed.map((e) => e.toJson()).toList());
+    await _synchronized(() async {
+      final emails = await getEmails();
+      emails.removeWhere((email) => email.id == id);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_emailsKey, emails.reversed.map((e) => e.toJson()).toList());
+    });
+    _changesController.add(null);
   }
 
   static Future<void> updateEmail(ScheduledEmail updatedEmail) async {
-    final emails = await getEmails();
-    final index = emails.indexWhere((e) => e.id == updatedEmail.id);
-    if (index != -1) {
-      emails[index] = updatedEmail;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(_emailsKey, emails.reversed.map((e) => e.toJson()).toList());
-    }
+    await _synchronized(() async {
+      final emails = await getEmails();
+      final index = emails.indexWhere((e) => e.id == updatedEmail.id);
+      if (index != -1) {
+        emails[index] = updatedEmail;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(_emailsKey, emails.reversed.map((e) => e.toJson()).toList());
+      }
+    });
+    _changesController.add(null);
   }
 
   // Sender Email Autocomplete Storage
@@ -139,15 +164,15 @@ class StorageService {
   }
 
   static Future<void> incrementDailySentCount(String senderEmail) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    final limits = await getAllDailyLimits();
-    
-    int current = limits[senderEmail] ?? 0;
-    limits[senderEmail] = current + 1;
-    
-    await prefs.setString('daily_sent_map', jsonEncode(limits));
-    await prefs.setString('daily_sent_date', DateHelpers.todayDmy());
+    await _synchronized(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      final limits = await getAllDailyLimits();
+      limits[senderEmail] = (limits[senderEmail] ?? 0) + 1;
+      await prefs.setString('daily_sent_map', jsonEncode(limits));
+      await prefs.setString('daily_sent_date', DateHelpers.todayDmy());
+    });
+    _changesController.add(null);
   }
 
   // OAuth Access Token Storage (per sender)

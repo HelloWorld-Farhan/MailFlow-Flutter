@@ -3,8 +3,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:mailflow/models/scheduled_email.dart';
 import 'package:mailflow/services/app_config.dart';
 import 'package:mailflow/services/backend_service.dart';
+import 'package:mailflow/services/notification_service.dart';
 import 'package:mailflow/theme/app_theme.dart';
 import 'package:mailflow/services/update_service.dart';
 import 'package:mailflow/utils/date_helpers.dart';
@@ -84,6 +86,55 @@ void main() {
 
     final emails = await PdfParser.extractEmailsFromPdfBytes(Uint8List.fromList(bytes));
     expect(emails, unorderedEquals(['alice@example.com', 'bob@test.org']));
+  });
+
+  test('SendNotificationMonitor tracks start, parallel count, and completion', () {
+    final monitor = SendNotificationMonitor();
+    ScheduledEmail makeCampaign(String id, String status, {int sent = 0, Map<String, String>? map}) =>
+        ScheduledEmail(
+          id: id,
+          senderEmail: '$id@example.com',
+          type: 'Multiple',
+          recipients: ['a@example.com', 'b@example.com'],
+          subject: 'Hello $id',
+          body: '<p>Hi</p>',
+          scheduledDate: '27/11/2026',
+          scheduledTime: '06:00 PM',
+          status: status,
+          scheduleName: 'Camp $id',
+          sentCount: sent,
+          recipientStatuses: map,
+        );
+
+    // Initial launch seeds state without replaying old notifications.
+    expect(monitor.evaluate([makeCampaign('1', 'Scheduled'), makeCampaign('2', 'Scheduled')]), isEmpty);
+
+    // Campaign 1 starts.
+    final start1 = monitor.evaluate([
+      makeCampaign('1', 'Running', map: {'a@example.com': 'inProcess'}),
+      makeCampaign('2', 'Scheduled'),
+    ]);
+    expect(start1.length, 1);
+    expect(start1.first.kind, CampaignEventKind.started);
+    expect(start1.first.activeParallelCount, 1);
+    expect(SendNotificationMonitor.currentRecipient(start1.first.email), 'a@example.com');
+
+    // Campaign 2 starts while Campaign 1 is still running -> parallel count is 2.
+    final start2 = monitor.evaluate([
+      makeCampaign('1', 'Doing it... (1/2)', sent: 1),
+      makeCampaign('2', 'Running', map: {'b@example.com': 'inProcess'}),
+    ]);
+    expect(start2.length, 1);
+    expect(start2.first.kind, CampaignEventKind.started);
+    expect(start2.first.activeParallelCount, 2);
+
+    // Campaign 1 finishes, Campaign 2 fails.
+    final finish = monitor.evaluate([
+      makeCampaign('1', 'Success', sent: 2),
+      makeCampaign('2', 'Failed: 401'),
+    ]);
+    expect(finish.map((e) => e.kind), [CampaignEventKind.completed, CampaignEventKind.failed]);
+    expect(finish.first.activeParallelCount, 0);
   });
 
   testWidgets('AppTheme light theme initializes properly', (WidgetTester tester) async {
