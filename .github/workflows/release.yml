@@ -76,7 +76,10 @@ jobs:
 
       - name: Compile Windows .exe Installer
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\installer.iss
+          $ver = "${{ github.ref_name }}".TrimStart('v')
+          if ([string]::IsNullOrWhiteSpace($ver) -or $ver -eq "main") { $ver = "1.0.2" }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$ver" windows\installer.iss
+          if (-not (Test-Path "MailFlow-Windows-Setup.exe")) { throw "MailFlow-Windows-Setup.exe not found" }
 
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
@@ -109,7 +112,9 @@ jobs:
 
       - name: Create DMG File
         run: |
-          hdiutil create -volname "MailFlow" -srcfolder "build/macos/Build/Products/Release/MailFlow.app" -ov -format UDZO "MailFlow-macOS.dmg"
+          APP_PATH=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then echo "No .app bundle found"; exit 1; fi
+          hdiutil create -volname "MailFlow" -srcfolder "$APP_PATH" -ov -format UDZO "MailFlow-macOS.dmg"
 
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4

@@ -1,5 +1,7 @@
 #define MyAppName "MailFlow"
-#define MyAppVersion "1.0.1"
+#ifndef MyAppVersion
+#define MyAppVersion "1.0.2"
+#endif
 #define MyAppPublisher "HelloWorld-Farhan"
 #define MyAppURL "https://github.com/HelloWorld-Farhan/MailFlow-Flutter"
 #define MyAppExeName "mailflow.exe"
@@ -14,7 +16,7 @@ AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
-OutputDir=.
+OutputDir=..
 OutputBaseFilename=MailFlow-Windows-Setup
 Compression=lzma
 SolidCompression=yes
@@ -27,7 +29,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

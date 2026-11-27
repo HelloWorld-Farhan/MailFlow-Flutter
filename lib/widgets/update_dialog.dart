@@ -61,7 +61,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
       if (result.errorMessage != null && result.latestRelease == null) {
         _state = _UpdateState.error;
         _errorMessage = result.errorMessage;
-      } else if (result.hasUpdate && result.latestRelease?.apkDownloadUrl != null) {
+      } else if (result.hasUpdate && result.latestRelease != null) {
         _state = _UpdateState.available;
       } else {
         _state = _UpdateState.upToDate;
@@ -70,11 +70,11 @@ class _UpdateDialogState extends State<UpdateDialog> {
   }
 
   Future<void> _startDownload() async {
-    final apkUrl = _checkResult?.latestRelease?.apkDownloadUrl;
-    if (apkUrl == null) {
+    final downloadUrl = _checkResult?.latestRelease?.platformDownloadUrl;
+    if (downloadUrl == null) {
       setState(() {
         _state = _UpdateState.error;
-        _errorMessage = 'APK download link is not available for this release.';
+        _errorMessage = 'Download link is not available for this platform.';
       });
       return;
     }
@@ -86,7 +86,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
     try {
       await UpdateService.downloadAndInstall(
-        downloadUrl: apkUrl,
+        downloadUrl: downloadUrl,
         onProgress: (progress, received, total) {
           if (mounted) {
             setState(() {
@@ -319,10 +319,19 @@ class _UpdateDialogState extends State<UpdateDialog> {
                             color: AppTheme.textDark,
                           ),
                         ),
-                        if (release.apkSize > 0)
+                        if (release.platformAssetSize > 0)
                           Text(
-                            'Download size: ${_formatBytes(release.apkSize)}',
+                            'Download size: ${_formatBytes(release.platformAssetSize)}',
                             style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 12,
+                              color: AppTheme.textMid,
+                            ),
+                          ),
+                        if (release.platformDownloadUrl == null)
+                          const Text(
+                            'Download this release from GitHub Releases on this device.',
+                            style: TextStyle(
                               fontFamily: 'Inter',
                               fontSize: 12,
                               color: AppTheme.textMid,
@@ -543,6 +552,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
         );
 
       case _UpdateState.available:
+        final hasInstaller = _checkResult?.latestRelease?.platformDownloadUrl != null;
         return Row(
           children: [
             Expanded(
@@ -553,9 +563,9 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   side: const BorderSide(color: AppTheme.divider),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text(
-                  'Later',
-                  style: TextStyle(
+                child: Text(
+                  hasInstaller ? 'Later' : 'Close',
+                  style: const TextStyle(
                     fontFamily: 'Inter',
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textMid,
@@ -563,28 +573,30 @@ class _UpdateDialogState extends State<UpdateDialog> {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: ElevatedButton.icon(
-                onPressed: _startDownload,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryBlue,
-                  foregroundColor: Colors.white,
-                  elevation: 2,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                icon: const Icon(Icons.download_rounded, size: 20),
-                label: const Text(
-                  'Download & Install',
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontWeight: FontWeight.w600,
+            if (hasInstaller) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  onPressed: _startDownload,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryBlue,
+                    foregroundColor: Colors.white,
+                    elevation: 2,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: const Icon(Icons.download_rounded, size: 20),
+                  label: const Text(
+                    'Download & Install',
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ],
         );
 

@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'storage_service.dart';
@@ -32,18 +34,22 @@ class BackgroundDispatcher {
     return _signInCache[senderEmail]!;
   }
 
+  static bool get _isAndroid => !kIsWeb && Platform.isAndroid;
+
   static Future<void> start() async {
     print('Starting Background Dispatcher...');
-    await AndroidAlarmManager.initialize();
-    
-    // Register a periodic fallback every 5 minutes to catch any missed alarms
-    await AndroidAlarmManager.periodic(
-      const Duration(minutes: 5),
-      1,
-      exactAlarmCallback,
-      wakeup: true,
-      rescheduleOnReboot: true,
-    );
+    if (_isAndroid) {
+      await AndroidAlarmManager.initialize();
+
+      // Register a periodic fallback every 5 minutes to catch any missed alarms
+      await AndroidAlarmManager.periodic(
+        const Duration(minutes: 5),
+        1,
+        exactAlarmCallback,
+        wakeup: true,
+        rescheduleOnReboot: true,
+      );
+    }
 
     _timer?.cancel();
     // Poll every 5 seconds so the app reacts within 5 seconds of the scheduled time
@@ -55,6 +61,7 @@ class BackgroundDispatcher {
   }
 
   static void scheduleExactAlarm(DateTime time, int id) {
+    if (!_isAndroid) return;
     AndroidAlarmManager.oneShotAt(
       time,
       id,
@@ -103,7 +110,9 @@ class BackgroundDispatcher {
 
   static void stop() {
     _timer?.cancel();
-    AndroidAlarmManager.cancel(1);
+    if (_isAndroid) {
+      AndroidAlarmManager.cancel(1);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

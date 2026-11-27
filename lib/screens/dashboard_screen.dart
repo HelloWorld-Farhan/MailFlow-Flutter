@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -99,6 +100,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _checkPermissions() async {
+    if (kIsWeb || !Platform.isAndroid) return;
     if (await Permission.scheduleExactAlarm.isDenied) {
       await Permission.scheduleExactAlarm.request();
     }

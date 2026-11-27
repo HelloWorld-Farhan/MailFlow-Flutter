@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -13,6 +14,8 @@ class ReleaseInfo {
   final String? publishedAt;
   final String? apkDownloadUrl;
   final int apkSize;
+  final String? windowsDownloadUrl;
+  final int windowsSize;
 
   ReleaseInfo({
     required this.tagName,
@@ -22,7 +25,23 @@ class ReleaseInfo {
     this.publishedAt,
     this.apkDownloadUrl,
     this.apkSize = 0,
+    this.windowsDownloadUrl,
+    this.windowsSize = 0,
   });
+
+  String? get platformDownloadUrl {
+    if (kIsWeb) return null;
+    if (Platform.isWindows) return windowsDownloadUrl;
+    if (Platform.isAndroid) return apkDownloadUrl;
+    return null;
+  }
+
+  int get platformAssetSize {
+    if (kIsWeb) return 0;
+    if (Platform.isWindows) return windowsSize;
+    if (Platform.isAndroid) return apkSize;
+    return 0;
+  }
 
   factory ReleaseInfo.fromJson(Map<String, dynamic> json) {
     final tagName = (json['tag_name'] ?? '').toString();
@@ -32,14 +51,18 @@ class ReleaseInfo {
 
     String? apkUrl;
     int apkSize = 0;
+    String? windowsUrl;
+    int windowsSize = 0;
     final assets = json['assets'] as List<dynamic>?;
     if (assets != null) {
       for (final asset in assets) {
         final name = (asset['name'] ?? '').toString().toLowerCase();
-        if (name.endsWith('.apk')) {
+        if (name.endsWith('.apk') && apkUrl == null) {
           apkUrl = asset['browser_download_url']?.toString();
           apkSize = (asset['size'] as num?)?.toInt() ?? 0;
-          break;
+        } else if (name.endsWith('.exe') && windowsUrl == null) {
+          windowsUrl = asset['browser_download_url']?.toString();
+          windowsSize = (asset['size'] as num?)?.toInt() ?? 0;
         }
       }
     }
@@ -52,6 +75,8 @@ class ReleaseInfo {
       publishedAt: json['published_at']?.toString(),
       apkDownloadUrl: apkUrl,
       apkSize: apkSize,
+      windowsDownloadUrl: windowsUrl,
+      windowsSize: windowsSize,
     );
   }
 }
@@ -146,7 +171,7 @@ class UpdateService {
     }
   }
 
-  /// Downloads the APK with real-time byte progress and launches the system installer
+  /// Downloads the platform installer (APK/EXE) with real-time progress and launches it
   static Future<void> downloadAndInstall({
     required String downloadUrl,
     required void Function(double progress, int receivedBytes, int totalBytes) onProgress,
@@ -161,9 +186,11 @@ class UpdateService {
         throw Exception('Download failed with status ${response.statusCode}');
       }
 
+      final isWindows = !kIsWeb && Platform.isWindows;
+      final fileName = isWindows ? 'MailFlow-Windows-Setup.exe' : 'MailFlow-update.apk';
       final totalBytes = response.contentLength ?? 0;
       final tempDir = await getTemporaryDirectory();
-      final saveFile = File('${tempDir.path}/MailFlow-update.apk');
+      final saveFile = File('${tempDir.path}/$fileName');
 
       if (await saveFile.exists()) {
         await saveFile.delete();
@@ -189,7 +216,7 @@ class UpdateService {
       // Launch installer
       final result = await OpenFilex.open(
         saveFile.path,
-        type: 'application/vnd.android.package-archive',
+        type: isWindows ? null : 'application/vnd.android.package-archive',
       );
 
       if (result.type != ResultType.done) {

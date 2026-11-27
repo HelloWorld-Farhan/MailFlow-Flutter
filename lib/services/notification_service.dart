@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
@@ -7,7 +9,7 @@ class NotificationService {
   static bool _isInitialized = false;
 
   static Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (_isInitialized || kIsWeb || !Platform.isAndroid) return;
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
@@ -21,6 +23,7 @@ class NotificationService {
     required String newVersion,
     String? body,
   }) async {
+    if (kIsWeb || !Platform.isAndroid) return;
     await initialize();
 
     const androidDetails = AndroidNotificationDetails(
