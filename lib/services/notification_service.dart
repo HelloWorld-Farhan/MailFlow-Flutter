@@ -488,4 +488,107 @@ class NotificationService {
       payload: updatePayload,
     );
   }
+
+  /// Shows or updates a real-time ongoing progress notification while an update downloads.
+  static Future<void> showUpdateDownloadProgress({
+    required String version,
+    required int progressPct,
+    required String subtitle,
+    bool indeterminate = false,
+  }) async {
+    if (!_isSupported) return;
+    await initialize();
+
+    final pct = progressPct.clamp(0, 100);
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'mailflow_update_download',
+        'Update Downloads',
+        channelDescription: 'Real-time progress while downloading MailFlow updates',
+        importance: Importance.low,
+        priority: Priority.low,
+        playSound: false,
+        onlyAlertOnce: true,
+        ongoing: true,
+        showProgress: true,
+        indeterminate: indeterminate,
+        maxProgress: 100,
+        progress: pct,
+      ),
+      iOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
+      macOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
+      windows: WindowsNotificationDetails(
+        audio: WindowsNotificationAudio.silent(),
+        progressBars: [
+          WindowsProgressBar(
+            id: 'update_dl',
+            title: 'Downloading MailFlow v$version',
+            status: subtitle,
+            value: indeterminate ? null : pct / 100.0,
+          ),
+        ],
+      ),
+    );
+
+    await _notificationsPlugin.show(
+      id: 1002,
+      title: 'Downloading MailFlow v$version ($pct%)',
+      body: subtitle,
+      notificationDetails: details,
+      payload: updatePayload,
+    );
+  }
+
+  /// Replaces the progress notification with a ready-to-install alert.
+  static Future<void> showUpdateDownloadComplete(String version) async {
+    if (!_isSupported) return;
+    await initialize();
+    await cancelNotification(1002);
+
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'mailflow_updates',
+        'Software Updates',
+        channelDescription: 'Notifications for new MailFlow versions and updates',
+        importance: Importance.max,
+        priority: Priority.high,
+        playSound: true,
+      ),
+      iOS: DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
+      macOS: DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
+    );
+
+    await _notificationsPlugin.show(
+      id: 1002,
+      title: 'MailFlow v$version Downloaded',
+      body: 'Tap to complete installation.',
+      notificationDetails: details,
+      payload: updatePayload,
+    );
+  }
+
+  /// Replaces the progress notification with an error alert if download fails.
+  static Future<void> showUpdateDownloadFailed(String message) async {
+    if (!_isSupported) return;
+    await initialize();
+    await cancelNotification(1002);
+
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'mailflow_updates',
+        'Software Updates',
+        channelDescription: 'Notifications for new MailFlow versions and updates',
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
+    );
+
+    await _notificationsPlugin.show(
+      id: 1002,
+      title: 'Update Download Failed',
+      body: message,
+      notificationDetails: details,
+      payload: updatePayload,
+    );
+  }
 }

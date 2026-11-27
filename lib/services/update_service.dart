@@ -6,6 +6,31 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'notification_service.dart';
+
+enum UpdateDownloadStatus { idle, downloading, installing, error }
+
+class UpdateDownloadSnapshot {
+  final UpdateDownloadStatus status;
+  final double progress;
+  final int receivedBytes;
+  final int totalBytes;
+  final String? version;
+  final String? errorMessage;
+  final String? filePath;
+
+  const UpdateDownloadSnapshot({
+    required this.status,
+    this.progress = 0.0,
+    this.receivedBytes = 0,
+    this.totalBytes = 0,
+    this.version,
+    this.errorMessage,
+    this.filePath,
+  });
+
+  const UpdateDownloadSnapshot.idle() : this(status: UpdateDownloadStatus.idle);
+}
 
 class ReleaseInfo {
   final String tagName;
@@ -196,16 +221,36 @@ class UpdateService {
     return requested.isGranted;
   }
 
-  /// Downloads the platform installer (APK/EXE) with real-time progress and launches it
-  static Future<void> downloadAndInstall({
+  /// App-wide download state so OTA downloads survive dialog dismissal & app minimization.
+  static final ValueNotifier<UpdateDownloadSnapshot> downloadNotifier =
+      ValueNotifier<UpdateDownloadSnapshot>(const UpdateDownloadSnapshot.idle());
+
+  static Future<void> startUpdateDownload({
     required String downloadUrl,
-    required void Function(double progress, int receivedBytes, int totalBytes) onProgress,
+    required String version,
   }) async {
+    if (downloadNotifier.value.status == UpdateDownloadStatus.downloading) return;
+
+    downloadNotifier.value = UpdateDownloadSnapshot(
+      status: UpdateDownloadStatus.downloading,
+      version: version,
+    );
+    await NotificationService.showUpdateDownloadProgress(
+      version: version,
+      progressPct: 0,
+      subtitle: 'Starting download...',
+      indeterminate: true,
+    );
+
     final client = http.Client();
+    DateTime lastNotifAt = DateTime.fromMillisecondsSinceEpoch(0);
+    int lastNotifPct = -1;
+
     try {
+      await ensureInstallPermission();
+
       final request = http.Request('GET', Uri.parse(downloadUrl));
       request.headers['User-Agent'] = 'MailFlow-Updater';
-
       final response = await client.send(request);
       if (response.statusCode != 200) {
         throw Exception('Download failed with status ${response.statusCode}');
@@ -219,10 +264,7 @@ class UpdateService {
       final totalBytes = response.contentLength ?? 0;
       final tempDir = await getTemporaryDirectory();
       final saveFile = File('${tempDir.path}/$fileName');
-
-      if (await saveFile.exists()) {
-        await saveFile.delete();
-      }
+      if (await saveFile.exists()) await saveFile.delete();
 
       final sink = saveFile.openWrite();
       int receivedBytes = 0;
@@ -230,11 +272,31 @@ class UpdateService {
       await for (final chunk in response.stream) {
         sink.add(chunk);
         receivedBytes += chunk.length;
-        if (totalBytes > 0) {
-          final progress = receivedBytes / totalBytes;
-          onProgress(progress, receivedBytes, totalBytes);
-        } else {
-          onProgress(0.0, receivedBytes, totalBytes);
+        final progress = totalBytes > 0 ? (receivedBytes / totalBytes).clamp(0.0, 1.0) : 0.0;
+        final pct = (progress * 100).round();
+
+        downloadNotifier.value = UpdateDownloadSnapshot(
+          status: UpdateDownloadStatus.downloading,
+          progress: progress,
+          receivedBytes: receivedBytes,
+          totalBytes: totalBytes,
+          version: version,
+          filePath: saveFile.path,
+        );
+
+        final now = DateTime.now();
+        if (pct != lastNotifPct &&
+            (pct - lastNotifPct >= 2 || now.difference(lastNotifAt).inMilliseconds >= 400)) {
+          lastNotifPct = pct;
+          lastNotifAt = now;
+          final recMb = (receivedBytes / (1024 * 1024)).toStringAsFixed(1);
+          final totMb = totalBytes > 0 ? '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB' : '...';
+          NotificationService.showUpdateDownloadProgress(
+            version: version,
+            progressPct: pct,
+            subtitle: '$recMb MB / $totMb',
+            indeterminate: totalBytes <= 0,
+          );
         }
       }
 
@@ -253,18 +315,46 @@ class UpdateService {
         }
       }
 
-      // Launch installer (preserves existing app data across upgrades)
+      downloadNotifier.value = UpdateDownloadSnapshot(
+        status: UpdateDownloadStatus.installing,
+        progress: 1.0,
+        receivedBytes: receivedBytes,
+        totalBytes: totalBytes,
+        version: version,
+        filePath: saveFile.path,
+      );
+      await NotificationService.showUpdateDownloadComplete(version);
+
       final result = await OpenFilex.open(
         saveFile.path,
         type: (isWindows || isMacOs) ? null : 'application/vnd.android.package-archive',
       );
-
       if (result.type != ResultType.done) {
         throw Exception(result.message);
       }
+    } catch (e) {
+      final msg = e.toString().replaceAll('Exception: ', '');
+      downloadNotifier.value = UpdateDownloadSnapshot(
+        status: UpdateDownloadStatus.error,
+        version: version,
+        errorMessage: msg,
+      );
+      await NotificationService.showUpdateDownloadFailed(msg);
     } finally {
       client.close();
     }
+  }
+
+  /// Re-opens the already-downloaded installer if available.
+  static Future<void> retryDownloadedInstaller() async {
+    final path = downloadNotifier.value.filePath;
+    if (path == null || !await File(path).exists()) return;
+    final isWindows = !kIsWeb && Platform.isWindows;
+    final isMacOs = !kIsWeb && Platform.isMacOS;
+    await OpenFilex.open(
+      path,
+      type: (isWindows || isMacOs) ? null : 'application/vnd.android.package-archive',
+    );
   }
 }
 

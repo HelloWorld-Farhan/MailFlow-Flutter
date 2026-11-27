@@ -2322,9 +2322,12 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     if (!_isValidEmail(sender) || !_isAuthenticated) { _showMsg('sender', 'Authenticate a valid sender email first.'); return; }
     if (!DateHelpers.isFutureDmyTime(_dateController.text, _timeController.text, _isAm)) { _showMsg('date', 'Enter a valid future date and time.'); return; }
 
-    // Prevent scheduling if the sender has ALREADY hit 50 emails sent today
-    if (_currentSenderUsage >= 50) {
-      _showMsg('sender', 'Daily quota full for today! $_currentSenderUsage/50 already sent. Please use a different sender email.');
+    // Prevent using an exhausted sender (50/50) for Today; auto-transfer to Tomorrow
+    if (_currentSenderUsage >= 50 && _dateController.text.trim() == DateHelpers.todayDmy()) {
+      final tmr = DateTime.now().add(const Duration(days: 1));
+      _dateController.text =
+          '${tmr.day.toString().padLeft(2, '0')}/${tmr.month.toString().padLeft(2, '0')}/${tmr.year}';
+      _showMsg('date', 'Daily 50/50 limit reached today — date moved to Tomorrow. Tap Save to confirm.');
       return;
     }
 
@@ -3420,15 +3423,29 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   const SizedBox(height: 28),
 
                   // Submit
-                  if (_currentSenderUsage >= 50)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(color: AppTheme.errorRed.withOpacity(0.1), borderRadius: BorderRadius.circular(16)),
-                      child: const Center(
-                        child: Text(
-                          'Daily limit 50 reached. Try again tomorrow.',
-                          style: TextStyle(color: AppTheme.errorRed, fontFamily: 'Inter', fontWeight: FontWeight.bold, fontSize: 14),
+                  if (_currentSenderUsage >= 50 && _dateController.text.trim() == DateHelpers.todayDmy())
+                    GestureDetector(
+                      onTap: () {
+                        final tmr = DateTime.now().add(const Duration(days: 1));
+                        setState(() {
+                          _dateController.text =
+                              '${tmr.day.toString().padLeft(2, '0')}/${tmr.month.toString().padLeft(2, '0')}/${tmr.year}';
+                        });
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+                        decoration: BoxDecoration(
+                          color: AppTheme.errorRed.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppTheme.errorRed.withValues(alpha: 0.35)),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'Daily 50/50 limit reached today. Tap to move to Tomorrow.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppTheme.errorRed, fontFamily: 'Inter', fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
                         ),
                       ),
                     )

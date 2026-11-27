@@ -61,13 +61,49 @@ class _UpdateDialogState extends State<UpdateDialog> {
   @override
   void initState() {
     super.initState();
+    UpdateService.downloadNotifier.addListener(_syncFromService);
+    final activeDl = UpdateService.downloadNotifier.value;
     final preset = widget.initialResult;
-    if (preset != null && preset.latestRelease != null) {
+    if (activeDl.status == UpdateDownloadStatus.downloading ||
+        activeDl.status == UpdateDownloadStatus.installing) {
+      _checkResult = preset;
+      _syncFromService();
+    } else if (preset != null && preset.latestRelease != null) {
       _checkResult = preset;
       _state = preset.hasUpdate ? _UpdateState.available : _UpdateState.upToDate;
     } else {
       _runCheck();
     }
+  }
+
+  @override
+  void dispose() {
+    UpdateService.downloadNotifier.removeListener(_syncFromService);
+    super.dispose();
+  }
+
+  void _syncFromService() {
+    if (!mounted) return;
+    final dl = UpdateService.downloadNotifier.value;
+    setState(() {
+      switch (dl.status) {
+        case UpdateDownloadStatus.idle:
+          break;
+        case UpdateDownloadStatus.downloading:
+          _state = _UpdateState.downloading;
+          _downloadProgress = dl.progress;
+          _receivedBytes = dl.receivedBytes;
+          _totalBytes = dl.totalBytes;
+        case UpdateDownloadStatus.installing:
+          _state = _UpdateState.installing;
+          _downloadProgress = 1.0;
+          _receivedBytes = dl.receivedBytes;
+          _totalBytes = dl.totalBytes;
+        case UpdateDownloadStatus.error:
+          _state = _UpdateState.error;
+          _errorMessage = dl.errorMessage ?? 'Update download failed.';
+      }
+    });
   }
 
   Future<void> _runCheck() async {
@@ -93,7 +129,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
   }
 
   Future<void> _startDownload() async {
-    final downloadUrl = _checkResult?.latestRelease?.platformDownloadUrl;
+    final release = _checkResult?.latestRelease;
+    final downloadUrl = release?.platformDownloadUrl;
     if (downloadUrl == null) {
       setState(() {
         _state = _UpdateState.error;
@@ -101,40 +138,10 @@ class _UpdateDialogState extends State<UpdateDialog> {
       });
       return;
     }
-
-    setState(() {
-      _state = _UpdateState.downloading;
-      _downloadProgress = 0.0;
-    });
-
-    try {
-      await UpdateService.ensureInstallPermission();
-      await UpdateService.downloadAndInstall(
-        downloadUrl: downloadUrl,
-        onProgress: (progress, received, total) {
-          if (mounted) {
-            setState(() {
-              _downloadProgress = progress;
-              _receivedBytes = received;
-              _totalBytes = total;
-            });
-          }
-        },
-      );
-
-      if (mounted) {
-        setState(() {
-          _state = _UpdateState.installing;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _state = _UpdateState.error;
-          _errorMessage = e.toString().replaceAll('Exception: ', '');
-        });
-      }
-    }
+    await UpdateService.startUpdateDownload(
+      downloadUrl: downloadUrl,
+      version: release?.version ?? 'New',
+    );
   }
 
   String _formatBytes(int bytes) {
@@ -554,7 +561,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
             const SizedBox(width: 12),
             Expanded(
               child: ElevatedButton(
-                onPressed: _startDownload,
+                onPressed: () => UpdateService.retryDownloadedInstaller(),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryBlue,
                   foregroundColor: Colors.white,

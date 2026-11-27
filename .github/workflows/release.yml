@@ -44,7 +44,7 @@ jobs:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           if [ -n "$KS_B64" ]; then
-            echo "$KS_B64" | base64 --decode > android/app/release-keystore.jks
+            printf '%s' "$KS_B64" | tr -d '[:space:]' | base64 --decode > android/app/release-keystore.jks
             echo "MAILFLOW_KEYSTORE_PATH=$GITHUB_WORKSPACE/android/app/release-keystore.jks" >> "$GITHUB_ENV"
           fi
 
@@ -52,7 +52,7 @@ jobs:
         env:
           MAILFLOW_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           MAILFLOW_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          MAILFLOW_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MAILFLOW_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           VER="${GITHUB_REF_NAME#v}"
           if ! echo "$VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then VER="1.0.2"; fi

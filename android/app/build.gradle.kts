@@ -36,14 +36,14 @@ android {
         FileInputStream(keyPropsFile).use { keyProps.load(it) }
     }
 
-    val ksPath = System.getenv("MAILFLOW_KEYSTORE_PATH") ?: keyProps.getProperty("storeFile")
+    val ksPath = (System.getenv("MAILFLOW_KEYSTORE_PATH") ?: keyProps.getProperty("storeFile"))?.trim()
     val ksFile = if (!ksPath.isNullOrBlank()) {
         val f = File(ksPath)
         if (f.isAbsolute) f else file(ksPath)
     } else null
-    val ksPass = System.getenv("MAILFLOW_KEYSTORE_PASSWORD") ?: keyProps.getProperty("storePassword")
-    val ksAlias = System.getenv("MAILFLOW_KEY_ALIAS") ?: keyProps.getProperty("keyAlias")
-    val ksKeyPass = System.getenv("MAILFLOW_KEY_PASSWORD") ?: keyProps.getProperty("keyPassword")
+    val ksPass = (System.getenv("MAILFLOW_KEYSTORE_PASSWORD") ?: keyProps.getProperty("storePassword"))?.trim()
+    val ksAlias = (System.getenv("MAILFLOW_KEY_ALIAS") ?: keyProps.getProperty("keyAlias"))?.trim()
+    val ksKeyPass = (System.getenv("MAILFLOW_KEY_PASSWORD") ?: keyProps.getProperty("keyPassword"))?.trim()
 
     val hasReleaseSigning = ksFile != null && ksFile.exists() &&
         !ksPass.isNullOrBlank() &&

@@ -279,4 +279,17 @@ void main() {
     expect(history['28/11/2026']?['b@gmail.com'], 50);
     expect(history['27/11/2026']?['a@gmail.com'], 5);
   });
+
+  test('UpdateService.downloadNotifier initializes cleanly in idle state', () {
+    expect(UpdateService.downloadNotifier.value.status, UpdateDownloadStatus.idle);
+    const snap = UpdateDownloadSnapshot(
+      status: UpdateDownloadStatus.downloading,
+      progress: 0.45,
+      receivedBytes: 450,
+      totalBytes: 1000,
+      version: '1.1.2',
+    );
+    expect(snap.progress, 0.45);
+    expect(snap.version, '1.1.2');
+  });
 }
