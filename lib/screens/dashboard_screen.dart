@@ -354,7 +354,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
 
     return Scaffold(
-      backgroundColor: AppTheme.bgWhite,
+      backgroundColor: AppTheme.scaffoldBg(context),
       body: ResponsiveCenter(
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
@@ -375,33 +375,33 @@ class _DashboardScreenState extends State<DashboardScreen>
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppTheme.divider),
+                    border: Border.all(color: AppTheme.border(context)),
                   ),
                   child: Image.asset('assets/Logo.png'),
                 ),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'MailFlow',
                   style: TextStyle(
                     fontFamily: 'Outfit', fontSize: 19, fontWeight: FontWeight.w700,
-                    color: AppTheme.textDark,
+                    color: AppTheme.textPrimary(context),
                   ),
                 ),
                 const SizedBox(width: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: AppTheme.primaryBlue.withOpacity(0.09),
+                    color: AppTheme.primaryBlue.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.20)),
+                    border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.24)),
                   ),
                   child: Text(
                     'v$_currentVersion',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
-                      color: AppTheme.primaryBlue,
+                      color: AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue,
                       letterSpacing: 0.3,
                     ),
                   ),
@@ -413,7 +413,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                 alignment: Alignment.topRight,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.system_update_alt_rounded, color: AppTheme.primaryBlue, size: 22),
+                    icon: Icon(Icons.system_update_alt_rounded,
+                        color: AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue, size: 22),
                     tooltip: 'Check for Updates',
                     onPressed: () => _showUpdatePopup(),
                   ),
@@ -433,41 +434,99 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ],
               ),
               IconButton(
-                icon: const Icon(Icons.group_outlined, color: AppTheme.textMid, size: 22),
+                icon: Icon(Icons.group_outlined, color: AppTheme.textSecondary(context), size: 22),
                 tooltip: 'Email Groups',
                 onPressed: () => Navigator.push(context, BlurredPageRoute(builder: (_) => const EmailDetailScreen())),
               ),
               IconButton(
-                icon: const Icon(Icons.data_usage_rounded, color: AppTheme.textMid, size: 22),
+                icon: Icon(Icons.data_usage_rounded, color: AppTheme.textSecondary(context), size: 22),
                 tooltip: 'Email Limits',
                 onPressed: () => Navigator.push(context, BlurredPageRoute(builder: (_) => const EmailLimitScreen())),
               ),
+              ValueListenableBuilder<ThemeMode>(
+                valueListenable: AppTheme.themeModeNotifier,
+                builder: (context, mode, _) {
+                  final IconData icon;
+                  final String tooltip;
+                  final ThemeMode nextMode;
+                  switch (mode) {
+                    case ThemeMode.light:
+                      icon = Icons.light_mode_rounded;
+                      tooltip = 'Theme: Light (tap for Dark)';
+                      nextMode = ThemeMode.dark;
+                    case ThemeMode.dark:
+                      icon = Icons.dark_mode_rounded;
+                      tooltip = 'Theme: Dark (tap for System)';
+                      nextMode = ThemeMode.system;
+                    case ThemeMode.system:
+                      icon = Icons.brightness_auto_rounded;
+                      tooltip = 'Theme: System Auto (tap for Light)';
+                      nextMode = ThemeMode.light;
+                  }
+                  return IconButton(
+                    tooltip: tooltip,
+                    onPressed: () => AppTheme.setThemeMode(nextMode),
+                    icon: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 280),
+                      switchInCurve: Curves.easeOutBack,
+                      switchOutCurve: Curves.easeIn,
+                      transitionBuilder: (child, anim) => RotationTransition(
+                        turns: Tween(begin: 0.78, end: 1.0).animate(anim),
+                        child: ScaleTransition(scale: anim, child: child),
+                      ),
+                      child: Icon(
+                        icon,
+                        key: ValueKey(mode),
+                        color: mode == ThemeMode.dark
+                            ? AppTheme.lightBlue
+                            : (mode == ThemeMode.light ? AppTheme.warningAmber : AppTheme.textSecondary(context)),
+                        size: 22,
+                      ),
+                    ),
+                  );
+                },
+              ),
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert_rounded, color: AppTheme.textMid, size: 22),
+                icon: Icon(Icons.more_vert_rounded, color: AppTheme.textSecondary(context), size: 22),
                 tooltip: 'More',
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                position: PopupMenuPosition.under,
+                offset: const Offset(0, 8),
+                popUpAnimationStyle: const AnimationStyle(
+                  duration: Duration(milliseconds: 250),
+                  reverseDuration: Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                ),
+                color: AppTheme.cardBg(context),
+                surfaceTintColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(color: AppTheme.border(context)),
+                ),
                 onSelected: (val) {
                   if (val == 'contacts') _showAllContacts();
                   if (val == 'settings') Navigator.push(context, BlurredPageRoute(builder: (_) => const SettingsScreen()));
                 },
                 itemBuilder: (context) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'contacts',
                     child: Row(
                       children: [
-                        Icon(Icons.contacts_outlined, color: AppTheme.primaryBlue, size: 18),
-                        SizedBox(width: 10),
-                        Text('Saved Contacts', style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w500)),
+                        Icon(Icons.contacts_outlined,
+                            color: AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue, size: 18),
+                        const SizedBox(width: 10),
+                        Text('Saved Contacts',
+                            style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textPrimary(context))),
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'settings',
                     child: Row(
                       children: [
-                        Icon(Icons.settings_outlined, color: AppTheme.textMid, size: 18),
-                        SizedBox(width: 10),
-                        Text('Settings & Templates', style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w500)),
+                        Icon(Icons.settings_outlined, color: AppTheme.textSecondary(context), size: 18),
+                        const SizedBox(width: 10),
+                        Text('Settings & Templates',
+                            style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textPrimary(context))),
                       ],
                     ),
                   ),
@@ -475,9 +534,9 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
               const SizedBox(width: 4),
             ],
-            bottom: const PreferredSize(
-              preferredSize: Size.fromHeight(1),
-              child: Divider(height: 1, color: AppTheme.divider),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(1),
+              child: Divider(height: 1, color: AppTheme.border(context)),
             ),
           ),
 
@@ -489,7 +548,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: AppTheme.bgSurface,
+                    color: AppTheme.surfaceBg(context),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.30)),
                     boxShadow: [
@@ -512,11 +571,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                             children: [
                               Text(
                                 'Update Available: v${_latestVersion ?? "New"}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: 'Outfit',
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
-                                  color: AppTheme.textDark,
+                                  color: AppTheme.textPrimary(context),
                                 ),
                               ),
                               const Text(
@@ -1198,7 +1257,7 @@ class _EmailCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: Colors.white,
+        color: AppTheme.cardBg(context),
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
@@ -1207,7 +1266,7 @@ class _EmailCard extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppTheme.divider),
+              border: Border.all(color: AppTheme.border(context)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1217,7 +1276,7 @@ class _EmailCard extends StatelessWidget {
                     Container(
                       width: 48, height: 48,
                       decoration: BoxDecoration(
-                        color: clr.withOpacity(0.08),
+                        color: clr.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Icon(
@@ -1234,7 +1293,7 @@ class _EmailCard extends StatelessWidget {
                             (item.scheduleName != null && item.scheduleName!.isNotEmpty)
                                 ? item.scheduleName!
                                 : (item.subject.isNotEmpty ? item.subject : '(No Subject)'),
-                            style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textDark),
+                            style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textPrimary(context)),
                             maxLines: 1, overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
@@ -1352,7 +1411,7 @@ class _ContactsDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.cardBg(context),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -1366,27 +1425,27 @@ class _ContactsDialog extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Text('Contacts', style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
+                Text('Contacts', style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context))),
                 const Spacer(),
-                IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
+                IconButton(icon: Icon(Icons.close, color: AppTheme.textSecondary(context)), onPressed: () => Navigator.pop(context)),
               ],
             ),
-            Text('${contacts.length} saved', style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textLight)),
+            Text('${contacts.length} saved', style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textSecondary(context))),
             const SizedBox(height: 16),
-            const Divider(color: AppTheme.divider),
+            Divider(color: AppTheme.border(context)),
             Expanded(
               child: contacts.isEmpty
-                  ? const Center(child: Text('No contacts yet.', style: TextStyle(color: AppTheme.textLight)))
+                  ? Center(child: Text('No contacts yet.', style: TextStyle(color: AppTheme.textSecondary(context))))
                   : ListView.separated(
                       physics: const BouncingScrollPhysics(),
                       itemCount: contacts.length,
-                      separatorBuilder: (_, __) => const Divider(color: AppTheme.divider, height: 1),
+                      separatorBuilder: (_, __) => Divider(color: AppTheme.border(context), height: 1),
                       itemBuilder: (_, i) => ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: AppTheme.primaryBlue.withOpacity(0.08),
+                          backgroundColor: AppTheme.primaryBlue.withOpacity(0.12),
                           child: Text(contacts[i][0].toUpperCase(), style: const TextStyle(color: AppTheme.primaryBlue, fontWeight: FontWeight.w700)),
                         ),
-                        title: Text(contacts[i], style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark)),
+                        title: Text(contacts[i], style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textPrimary(context))),
                       ),
                     ),
             ),
@@ -1444,10 +1503,10 @@ class _DetailsDialogState extends State<_DetailsDialog> {
           child: GlassContainer(
             borderRadius: 24,
             blurSigma: 18,
-            color: Colors.white.withValues(alpha: 0.88),
+            color: AppTheme.cardBg(context).withValues(alpha: AppTheme.isDark(context) ? 0.92 : 0.88),
             borderColor: isActive
                 ? AppTheme.primaryBlue.withValues(alpha: 0.35)
-                : AppTheme.divider,
+                : AppTheme.border(context),
             padding: const EdgeInsets.all(24),
             child: SingleChildScrollView(
               child: Column(
@@ -1464,7 +1523,7 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                               (email.scheduleName != null && email.scheduleName!.isNotEmpty)
                                   ? email.scheduleName!
                                   : 'Schedule Details',
-                              style: const TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                              style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
                             ),
                             const SizedBox(height: 6),
                             Wrap(
@@ -1550,9 +1609,9 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    color: AppTheme.bgSurface,
+                    color: AppTheme.surfaceBg(context),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.divider),
+                    border: Border.all(color: AppTheme.border(context)),
                   ),
                   child: Row(
                     children: [
@@ -1566,7 +1625,7 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                       ),
                       Icon(
                         _showBody ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                        color: AppTheme.textMid, size: 20,
+                        color: AppTheme.textSecondary(context), size: 20,
                       ),
                     ],
                   ),
@@ -1577,8 +1636,8 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: AppTheme.bgSurface, borderRadius: BorderRadius.circular(12)),
-                  child: Text(email.body.isEmpty ? '(Empty body)' : email.body, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textDark)),
+                  decoration: BoxDecoration(color: AppTheme.surfaceBg(context), borderRadius: BorderRadius.circular(12)),
+                  child: Text(email.body.isEmpty ? '(Empty body)' : email.body, style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textPrimary(context))),
                 ),
               ],
               const SizedBox(height: 16),
@@ -1653,7 +1712,7 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                             Expanded(
                               child: Text(
                                 r,
-                                style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textDark, height: 1.3),
+                                style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context), height: 1.3),
                               ),
                             ),
                           ],
@@ -1678,11 +1737,11 @@ class _DetailsDialogState extends State<_DetailsDialog> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: AppTheme.textLight),
+          Icon(icon, size: 20, color: AppTheme.textSecondary(context)),
           const SizedBox(width: 16),
-          SizedBox(width: 72, child: Text(label, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textLight))),
+          SizedBox(width: 72, child: Text(label, style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textSecondary(context)))),
           const SizedBox(width: 8),
-          Expanded(child: Text(value, style: const TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textDark, height: 1.4))),
+          Expanded(child: Text(value, style: TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context), height: 1.4))),
         ],
       ),
     );
@@ -2227,9 +2286,9 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
       child: Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Column(
@@ -2241,7 +2300,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
             child: Container(
               width: 40, height: 4,
               decoration: BoxDecoration(
-                color: AppTheme.divider,
+                color: AppTheme.border(context),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -2264,7 +2323,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                             final d = DateHelpers.todayDmy();
                             return 'New Schedule  $d (${DateHelpers.weekdayName(d)})';
                           })(),
-                          style: TextStyle(fontFamily: 'Outfit', fontSize: widget.editEmail != null ? 22 : 16, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                          style: TextStyle(fontFamily: 'Outfit', fontSize: widget.editEmail != null ? 22 : 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
                         ),
                       ),
                       const Spacer(),
@@ -2272,8 +2331,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         onTap: () => Navigator.pop(context),
                         child: Container(
                           width: 32, height: 32,
-                          decoration: BoxDecoration(color: AppTheme.bgSurface, borderRadius: BorderRadius.circular(8)),
-                          child: const Icon(Icons.close, size: 18, color: AppTheme.textMid),
+                          decoration: BoxDecoration(color: AppTheme.surfaceBg(context), borderRadius: BorderRadius.circular(8)),
+                          child: Icon(Icons.close, size: 18, color: AppTheme.textSecondary(context)),
                         ),
                       ),
                     ],
@@ -3167,9 +3226,9 @@ class _ResendModalState extends State<_ResendModal> {
       maxWidth: 640,
       child: Container(
       height: MediaQuery.of(context).size.height * 0.7,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
       ),
       child: Column(
         children: [
@@ -3178,7 +3237,7 @@ class _ResendModalState extends State<_ResendModal> {
               margin: const EdgeInsets.only(top: 12, bottom: 8),
               width: 48, height: 6,
               decoration: BoxDecoration(
-                color: AppTheme.textLight.withOpacity(0.2),
+                color: AppTheme.textSecondary(context).withOpacity(0.25),
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
@@ -3191,17 +3250,17 @@ class _ResendModalState extends State<_ResendModal> {
                 children: [
                   Row(
                     children: [
-                      const Text(
+                      Text(
                         'Resend Email',
-                        style: TextStyle(fontFamily: 'Outfit', fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                        style: TextStyle(fontFamily: 'Outfit', fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
                       ),
                       const Spacer(),
                       GestureDetector(
                         onTap: () => Navigator.pop(context),
                         child: Container(
                           width: 32, height: 32,
-                          decoration: BoxDecoration(color: AppTheme.bgSurface, borderRadius: BorderRadius.circular(8)),
-                          child: const Icon(Icons.close, size: 18, color: AppTheme.textMid),
+                          decoration: BoxDecoration(color: AppTheme.surfaceBg(context), borderRadius: BorderRadius.circular(8)),
+                          child: Icon(Icons.close, size: 18, color: AppTheme.textSecondary(context)),
                         ),
                       ),
                     ],
@@ -3359,8 +3418,9 @@ class _AnimatedDropdownPicker extends StatelessWidget {
           margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppTheme.cardBg(context),
             borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppTheme.border(context)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -3369,23 +3429,23 @@ class _AnimatedDropdownPicker extends StatelessWidget {
                 width: 40, height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: AppTheme.divider,
+                  color: AppTheme.border(context),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              Text('Select ${hint.replaceAll('Select ', '')}', style: const TextStyle(fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.textDark)),
+              Text('Select ${hint.replaceAll('Select ', '')}', style: TextStyle(fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context))),
               const SizedBox(height: 16),
               if (items.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text('No saved items yet.', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textLight)),
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text('No saved items yet.', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textSecondary(context))),
                 )
               else
                 Flexible(
                   child: ListView.separated(
                     shrinkWrap: true,
                     itemCount: items.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1, color: AppTheme.divider),
+                    separatorBuilder: (_, __) => Divider(height: 1, color: AppTheme.border(context)),
                     itemBuilder: (context, index) {
                       final item = items[index];
                       final isSelected = selected == item;

@@ -55,7 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         return StatefulBuilder(
           builder: (context, setModalState) {
             return Dialog(
-              backgroundColor: Colors.white,
+              backgroundColor: AppTheme.cardBg(context),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -66,20 +66,20 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                     children: [
                       Text(
                         editItem == null ? 'New $type' : 'Edit $type',
-                        style: const TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                        style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
                       ),
                       const SizedBox(height: 20),
                       TextField(
                         controller: nameController,
                         decoration: InputDecoration(
                           labelText: 'Template Name',
-                          labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid),
+                          labelStyle: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textSecondary(context)),
                           floatingLabelBehavior: FloatingLabelBehavior.always,
                           filled: true,
-                          fillColor: AppTheme.primaryBlue.withValues(alpha: 0.04),
+                          fillColor: AppTheme.inputBg(context),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withValues(alpha: 0.2))),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withValues(alpha: 0.2))),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withValues(alpha: 0.25))),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withValues(alpha: 0.25))),
                           focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 2)),
                         ),
                       ),
@@ -96,11 +96,11 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                         decoration: InputDecoration(
                           labelText: type == 'Subject' ? 'Subject Line' : 'Email Body (HTML)',
                           hintText: type == 'Subject' ? 'Enter subject template...' : 'Enter HTML body... (e.g. <b>Hello</b><br>World)',
-                          labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textMid),
+                          labelStyle: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textSecondary(context)),
                           floatingLabelBehavior: FloatingLabelBehavior.always,
                           alignLabelWithHint: true,
                           filled: true,
-                          fillColor: AppTheme.primaryBlue.withValues(alpha: 0.04),
+                          fillColor: AppTheme.inputBg(context),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withValues(alpha: 0.2))),
                           enabledBorder: OutlineInputBorder(
@@ -227,16 +227,16 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           child: GlassContainer(
             borderRadius: 16,
             blurSigma: 10,
-            color: AppTheme.bgSurface.withValues(alpha: 0.85),
+            color: AppTheme.surfaceBg(context).withValues(alpha: 0.88),
             child: ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              title: Text(item.name, style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppTheme.textDark)),
-              subtitle: Text(item.content, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+              title: Text(item.name, style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
+              subtitle: Text(item.content, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Inter', color: AppTheme.textSecondary(context))),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.copy_rounded, color: AppTheme.textMid),
+                    icon: Icon(Icons.copy_rounded, color: AppTheme.textSecondary(context)),
                     onPressed: () {
                       import_services.Clipboard.setData(import_services.ClipboardData(text: item.content));
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -263,19 +263,20 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
+    final accent = AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue;
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.scaffoldBg(context),
       appBar: AppBar(
-        title: const Text('Settings & Templates', style: TextStyle(color: AppTheme.textDark, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+        title: Text('Settings & Templates', style: TextStyle(color: AppTheme.textPrimary(context), fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
         backgroundColor: Colors.transparent,
         flexibleSpace: buildGlassAppBarBackground(),
         elevation: 0,
-        iconTheme: const IconThemeData(color: AppTheme.textDark),
+        iconTheme: IconThemeData(color: AppTheme.textPrimary(context)),
         bottom: TabBar(
           controller: _tabController,
-          labelColor: AppTheme.primaryBlue,
-          unselectedLabelColor: AppTheme.textMid,
-          indicatorColor: AppTheme.primaryBlue,
+          labelColor: accent,
+          unselectedLabelColor: AppTheme.textSecondary(context),
+          indicatorColor: accent,
           tabs: const [
             Tab(text: 'Subjects'),
             Tab(text: 'Bodies'),

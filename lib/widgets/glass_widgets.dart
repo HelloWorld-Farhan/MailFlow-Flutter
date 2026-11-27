@@ -54,6 +54,7 @@ class GlassContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(borderRadius);
+    final isDark = AppTheme.isDark(context);
     return ClipRRect(
       borderRadius: radius,
       child: BackdropFilter(
@@ -61,15 +62,15 @@ class GlassContainer extends StatelessWidget {
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
-            color: color ?? Colors.white.withValues(alpha: 0.78),
+            color: color ?? (isDark ? AppTheme.darkCard : Colors.white).withValues(alpha: isDark ? 0.84 : 0.78),
             borderRadius: radius,
             border: Border.all(
-              color: borderColor ?? AppTheme.divider.withValues(alpha: 0.9),
+              color: borderColor ?? AppTheme.border(context).withValues(alpha: 0.9),
             ),
             boxShadow: boxShadow ??
                 [
                   BoxShadow(
-                    color: AppTheme.primaryBlue.withValues(alpha: 0.06),
+                    color: (isDark ? Colors.black : AppTheme.primaryBlue).withValues(alpha: isDark ? 0.25 : 0.06),
                     blurRadius: 18,
                     offset: const Offset(0, 6),
                   ),
@@ -84,13 +85,18 @@ class GlassContainer extends StatelessWidget {
 
 /// Frosted glass background widget for `AppBar.flexibleSpace` / `SliverAppBar`.
 Widget buildGlassAppBarBackground({Color? tint}) {
-  return ClipRect(
-    child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-      child: Container(
-        color: tint ?? Colors.white.withValues(alpha: 0.78),
-      ),
-    ),
+  return Builder(
+    builder: (context) {
+      final isDark = AppTheme.isDark(context);
+      return ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            color: tint ?? (isDark ? AppTheme.darkBg : Colors.white).withValues(alpha: isDark ? 0.84 : 0.78),
+          ),
+        ),
+      );
+    },
   );
 }
 

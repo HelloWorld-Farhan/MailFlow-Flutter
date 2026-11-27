@@ -5,12 +5,14 @@ import 'package:mailflow/models/scheduled_email.dart';
 import 'package:mailflow/services/app_config.dart';
 import 'package:mailflow/services/backend_service.dart';
 import 'package:mailflow/services/notification_service.dart';
+import 'package:mailflow/services/storage_service.dart';
 import 'package:mailflow/theme/app_theme.dart';
 import 'package:mailflow/widgets/glass_widgets.dart';
 import 'package:mailflow/widgets/update_dialog.dart';
 import 'package:mailflow/services/update_service.dart';
 import 'package:mailflow/utils/date_helpers.dart';
 import 'package:mailflow/utils/pdf_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 void main() {
@@ -222,9 +224,24 @@ void main() {
     }
   });
 
-  testWidgets('AppTheme light theme initializes properly', (WidgetTester tester) async {
-    final theme = AppTheme.lightTheme;
-    expect(theme.primaryColor, AppTheme.primaryBlue);
-    expect(theme.scaffoldBackgroundColor, Colors.white);
+  testWidgets('AppTheme light & dark themes and StorageService theme persistence work properly',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    expect(await StorageService.getThemeMode(), ThemeMode.system);
+
+    await AppTheme.setThemeMode(ThemeMode.dark);
+    expect(AppTheme.themeModeNotifier.value, ThemeMode.dark);
+    expect(await StorageService.getThemeMode(), ThemeMode.dark);
+
+    await AppTheme.setThemeMode(ThemeMode.light);
+    expect(await StorageService.getThemeMode(), ThemeMode.light);
+
+    final light = AppTheme.lightTheme;
+    final dark = AppTheme.darkTheme;
+    expect(light.primaryColor, AppTheme.primaryBlue);
+    expect(light.scaffoldBackgroundColor, AppTheme.bgWhite);
+    expect(dark.brightness, Brightness.dark);
+    expect(dark.scaffoldBackgroundColor, AppTheme.darkBg);
+    expect(dark.popupMenuTheme.color, AppTheme.darkCard);
   });
 }

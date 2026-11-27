@@ -8,10 +8,7 @@ import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark,
-  ));
+  await AppTheme.loadThemeMode();
   await AppConfig.load();
   await NotificationService.initialize();
   await BackendService.startRealtime();
@@ -23,11 +20,30 @@ class MailFlowApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'MailFlow',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      home: const SplashScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppTheme.themeModeNotifier,
+      builder: (context, mode, _) {
+        return MaterialApp(
+          title: 'MailFlow',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: mode,
+          themeAnimationDuration: const Duration(milliseconds: 380),
+          themeAnimationCurve: Curves.easeInOutCubic,
+          builder: (context, child) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+              systemNavigationBarColor: isDark ? AppTheme.darkBg : AppTheme.bgWhite,
+              systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+            ));
+            return child ?? const SizedBox.shrink();
+          },
+          home: const SplashScreen(),
+        );
+      },
     );
   }
 }

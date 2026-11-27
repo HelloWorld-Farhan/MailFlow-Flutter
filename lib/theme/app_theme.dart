@@ -1,6 +1,18 @@
 import 'package:flutter/material.dart';
+import '../services/storage_service.dart';
 
 class AppTheme {
+  static final ValueNotifier<ThemeMode> themeModeNotifier = ValueNotifier<ThemeMode>(ThemeMode.system);
+
+  static Future<void> loadThemeMode() async {
+    themeModeNotifier.value = await StorageService.getThemeMode();
+  }
+
+  static Future<void> setThemeMode(ThemeMode mode) async {
+    themeModeNotifier.value = mode;
+    await StorageService.saveThemeMode(mode);
+  }
+
   // ── Fresh White + Vivid Blue palette ────────────────────────────────────
   static const Color primaryBlue  = Color(0xFF2563EB); // Vivid Blue
   static const Color lightBlue    = Color(0xFF60A5FA); // Soft Blue
@@ -19,83 +31,120 @@ class AppTheme {
   static const Color textLight    = Color(0xFF94A3B8); // Slate 400
   static const Color divider      = Color(0xFFE2E8F0); // Slate 200
 
-  static ThemeData get lightTheme {
+  // ── Dark Slate + Vivid Blue palette ─────────────────────────────────────
+  static const Color darkBg       = Color(0xFF0B1220);
+  static const Color darkSurface  = Color(0xFF131D31);
+  static const Color darkCard     = Color(0xFF162033);
+  static const Color darkInput    = Color(0xFF1D2940);
+  static const Color darkText     = Color(0xFFF1F5F9);
+  static const Color darkTextMid  = Color(0xFF94A3B8);
+  static const Color darkDivider  = Color(0xFF28354D);
+
+  static bool isDark(BuildContext context) => Theme.of(context).brightness == Brightness.dark;
+  static Color scaffoldBg(BuildContext context) => isDark(context) ? darkBg : bgWhite;
+  static Color surfaceBg(BuildContext context) => isDark(context) ? darkSurface : bgSurface;
+  static Color cardBg(BuildContext context) => isDark(context) ? darkCard : bgCard;
+  static Color inputBg(BuildContext context) => isDark(context) ? darkInput : bgInput;
+  static Color textPrimary(BuildContext context) => isDark(context) ? darkText : textDark;
+  static Color textSecondary(BuildContext context) => isDark(context) ? darkTextMid : textMid;
+  static Color border(BuildContext context) => isDark(context) ? darkDivider : divider;
+
+  static ThemeData get lightTheme => _buildTheme(
+        brightness: Brightness.light,
+        bg: bgWhite,
+        card: bgCard,
+        input: bgInput,
+        text: textDark,
+        subText: textMid,
+        borderColor: divider,
+        accent: primaryBlue,
+      );
+
+  static ThemeData get darkTheme => _buildTheme(
+        brightness: Brightness.dark,
+        bg: darkBg,
+        card: darkCard,
+        input: darkInput,
+        text: darkText,
+        subText: darkTextMid,
+        borderColor: darkDivider,
+        accent: lightBlue,
+      );
+
+  static ThemeData _buildTheme({
+    required Brightness brightness,
+    required Color bg,
+    required Color card,
+    required Color input,
+    required Color text,
+    required Color subText,
+    required Color borderColor,
+    required Color accent,
+  }) {
+    final isDark = brightness == Brightness.dark;
     return ThemeData(
-      brightness: Brightness.light,
+      brightness: brightness,
       primaryColor: primaryBlue,
-      scaffoldBackgroundColor: bgWhite,
-      colorScheme: const ColorScheme.light(
+      scaffoldBackgroundColor: bg,
+      colorScheme: ColorScheme(
+        brightness: brightness,
         primary: primaryBlue,
-        secondary: accentBlue,
-        surface: bgCard,
         onPrimary: Colors.white,
+        secondary: accentBlue,
         onSecondary: Colors.white,
-        onSurface: textDark,
+        error: errorRed,
+        onError: Colors.white,
+        surface: card,
+        onSurface: text,
       ),
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(
-          color: textDark, fontWeight: FontWeight.w800,
-          fontFamily: 'Outfit', fontSize: 28,
-        ),
-        displayMedium: TextStyle(
-          color: textDark, fontWeight: FontWeight.w700,
-          fontFamily: 'Outfit', fontSize: 22,
-        ),
-        titleLarge: TextStyle(
-          color: textDark, fontWeight: FontWeight.w600,
-          fontFamily: 'Outfit', fontSize: 18,
-        ),
-        titleMedium: TextStyle(
-          color: textDark, fontWeight: FontWeight.w600,
-          fontFamily: 'Inter', fontSize: 15,
-        ),
-        bodyLarge: TextStyle(
-          color: textDark, fontFamily: 'Inter', fontSize: 15,
-        ),
-        bodyMedium: TextStyle(
-          color: textMid, fontFamily: 'Inter', fontSize: 13,
-        ),
-        labelLarge: TextStyle(
-          color: Colors.white, fontWeight: FontWeight.w600,
-          fontFamily: 'Inter', fontSize: 15,
-        ),
+      textTheme: TextTheme(
+        displayLarge: TextStyle(color: text, fontWeight: FontWeight.w800, fontFamily: 'Outfit', fontSize: 28),
+        displayMedium: TextStyle(color: text, fontWeight: FontWeight.w700, fontFamily: 'Outfit', fontSize: 22),
+        titleLarge: TextStyle(color: text, fontWeight: FontWeight.w600, fontFamily: 'Outfit', fontSize: 18),
+        titleMedium: TextStyle(color: text, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontSize: 15),
+        bodyLarge: TextStyle(color: text, fontFamily: 'Inter', fontSize: 15),
+        bodyMedium: TextStyle(color: subText, fontFamily: 'Inter', fontSize: 13),
+        labelLarge: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontSize: 15),
       ),
       cardTheme: CardThemeData(
-        color: bgCard,
+        color: card,
         elevation: 0,
         shadowColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: divider, width: 1),
+          side: BorderSide(color: borderColor, width: 1),
         ),
       ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: bgWhite,
+      dialogTheme: DialogThemeData(
+        backgroundColor: card,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: card,
+        surfaceTintColor: Colors.transparent,
+        elevation: isDark ? 10 : 6,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: borderColor),
+        ),
+        textStyle: TextStyle(color: text, fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w500),
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: bg,
         elevation: 0,
         centerTitle: false,
         surfaceTintColor: Colors.transparent,
-        iconTheme: IconThemeData(color: textDark),
-        titleTextStyle: TextStyle(
-          color: textDark, fontFamily: 'Outfit',
-          fontSize: 20, fontWeight: FontWeight.w700,
-        ),
+        iconTheme: IconThemeData(color: text),
+        titleTextStyle: TextStyle(color: text, fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: bgInput,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: divider),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: divider),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: primaryBlue, width: 2),
-        ),
-        hintStyle: const TextStyle(color: textLight, fontFamily: 'Inter', fontSize: 14),
+        fillColor: input,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: borderColor)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: borderColor)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: accent, width: 2)),
+        hintStyle: TextStyle(color: isDark ? darkTextMid : textLight, fontFamily: 'Inter', fontSize: 14),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -105,35 +154,27 @@ class AppTheme {
           elevation: 0,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          textStyle: const TextStyle(
-            fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 15,
-          ),
+          textStyle: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 15),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: primaryBlue,
-          side: const BorderSide(color: primaryBlue),
+          foregroundColor: accent,
+          side: BorderSide(color: accent),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          textStyle: const TextStyle(
-            fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 15,
-          ),
+          textStyle: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 15),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: primaryBlue,
-          textStyle: const TextStyle(
-            fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 14,
-          ),
+          foregroundColor: accent,
+          textStyle: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 14),
         ),
       ),
-      dividerColor: divider,
-      iconTheme: const IconThemeData(color: textMid),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: primaryBlue,
-      ),
+      dividerColor: borderColor,
+      iconTheme: IconThemeData(color: subText),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: accent),
     );
   }
 }

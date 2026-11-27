@@ -153,10 +153,10 @@ class _UpdateDialogState extends State<UpdateDialog> {
           constraints: const BoxConstraints(maxWidth: 368, maxHeight: 490),
           margin: const EdgeInsets.symmetric(horizontal: 20),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.86),
+            color: AppTheme.cardBg(context).withValues(alpha: AppTheme.isDark(context) ? 0.92 : 0.86),
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: AppTheme.primaryBlue.withValues(alpha: 0.22),
+              color: (AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue).withValues(alpha: 0.24),
               width: 1.5,
             ),
             boxShadow: [
@@ -218,23 +218,23 @@ class _UpdateDialogState extends State<UpdateDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Software Update',
                 style: TextStyle(
                   fontFamily: 'Outfit',
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textDark,
+                  color: AppTheme.textPrimary(context),
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 'Current: v${_checkResult?.currentVersion ?? "1.0.0"}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
-                  color: AppTheme.textMid,
+                  color: AppTheme.textSecondary(context),
                 ),
               ),
             ],
@@ -242,7 +242,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
         ),
         IconButton(
           onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.close_rounded, color: AppTheme.textMid),
+          icon: Icon(Icons.close_rounded, color: AppTheme.textSecondary(context)),
           splashRadius: 20,
         ),
       ],
@@ -368,13 +368,13 @@ class _UpdateDialogState extends State<UpdateDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'What’s Changed',
               style: TextStyle(
                 fontFamily: 'Outfit',
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
-                color: AppTheme.textDark,
+                color: AppTheme.textPrimary(context),
               ),
             ),
             const SizedBox(height: 8),
@@ -382,16 +382,16 @@ class _UpdateDialogState extends State<UpdateDialog> {
               width: double.infinity,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: AppTheme.bgSurface,
+                color: AppTheme.surfaceBg(context),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.divider),
+                border: Border.all(color: AppTheme.border(context)),
               ),
               child: Text(
                 release.body.trim().isEmpty ? 'Performance improvements and bug fixes.' : release.body,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 13,
-                  color: AppTheme.textDark,
+                  color: AppTheme.textPrimary(context),
                   height: 1.4,
                 ),
               ),
@@ -407,13 +407,13 @@ class _UpdateDialogState extends State<UpdateDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Downloading update...',
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.textDark,
+                    color: AppTheme.textPrimary(context),
                   ),
                 ),
                 Text(
@@ -433,17 +433,17 @@ class _UpdateDialogState extends State<UpdateDialog> {
               child: LinearProgressIndicator(
                 value: _downloadProgress > 0 ? _downloadProgress : null,
                 minHeight: 10,
-                backgroundColor: AppTheme.divider,
+                backgroundColor: AppTheme.border(context),
                 valueColor: const AlwaysStoppedAnimation(AppTheme.primaryBlue),
               ),
             ),
             const SizedBox(height: 10),
             Text(
               '${_formatBytes(_receivedBytes)} / ${_formatBytes(_totalBytes)}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 12,
-                color: AppTheme.textMid,
+                color: AppTheme.textSecondary(context),
               ),
             ),
             const SizedBox(height: 16),
@@ -463,23 +463,23 @@ class _UpdateDialogState extends State<UpdateDialog> {
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Launching package installer...',
               style: TextStyle(
                 fontFamily: 'Outfit',
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: AppTheme.textDark,
+                color: AppTheme.textPrimary(context),
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Please follow on-screen prompt to complete update.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 13,
-                color: AppTheme.textMid,
+                color: AppTheme.textSecondary(context),
               ),
             ),
             const SizedBox(height: 20),
@@ -500,23 +500,23 @@ class _UpdateDialogState extends State<UpdateDialog> {
               child: const Icon(Icons.error_outline_rounded, color: Colors.red, size: 32),
             ),
             const SizedBox(height: 14),
-            const Text(
+            Text(
               'Update Check Failed',
               style: TextStyle(
                 fontFamily: 'Outfit',
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
-                color: AppTheme.textDark,
+                color: AppTheme.textPrimary(context),
               ),
             ),
             const SizedBox(height: 6),
             Text(
               _errorMessage ?? 'An unexpected error occurred.',
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 12,
-                color: AppTheme.textMid,
+                color: AppTheme.textSecondary(context),
               ),
             ),
             const SizedBox(height: 16),
@@ -539,15 +539,15 @@ class _UpdateDialogState extends State<UpdateDialog> {
                 onPressed: _runCheck,
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(color: AppTheme.divider),
+                  side: BorderSide(color: AppTheme.border(context)),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text(
+                child: Text(
                   'Check Again',
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.textDark,
+                    color: AppTheme.textPrimary(context),
                   ),
                 ),
               ),
@@ -584,15 +584,15 @@ class _UpdateDialogState extends State<UpdateDialog> {
                 onPressed: () => Navigator.of(context).pop(),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(color: AppTheme.divider),
+                  side: BorderSide(color: AppTheme.border(context)),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 child: Text(
                   hasInstaller ? 'Later' : 'Close',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Inter',
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.textMid,
+                    color: AppTheme.textSecondary(context),
                   ),
                 ),
               ),
@@ -629,15 +629,15 @@ class _UpdateDialogState extends State<UpdateDialog> {
           onPressed: () => Navigator.of(context).pop(),
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14),
-            side: const BorderSide(color: AppTheme.divider),
+            side: BorderSide(color: AppTheme.border(context)),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
-          child: const Text(
+          child: Text(
             'Cancel',
             style: TextStyle(
               fontFamily: 'Inter',
               fontWeight: FontWeight.w600,
-              color: AppTheme.textMid,
+              color: AppTheme.textSecondary(context),
             ),
           ),
         );

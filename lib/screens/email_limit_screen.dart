@@ -117,23 +117,23 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
     final totalSent = _limits.values.fold<int>(0, (sum, v) => sum + v);
 
     return Scaffold(
-      backgroundColor: AppTheme.bgSurface,
+      backgroundColor: AppTheme.surfaceBg(context),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         flexibleSpace: buildGlassAppBarBackground(),
         elevation: 0,
         centerTitle: false,
-        iconTheme: const IconThemeData(color: AppTheme.textDark),
+        iconTheme: IconThemeData(color: AppTheme.textPrimary(context)),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Email Limits',
               style: TextStyle(
                 fontFamily: 'Outfit',
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
-                color: AppTheme.textDark,
+                color: AppTheme.textPrimary(context),
               ),
             ),
             Row(
@@ -168,9 +168,9 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
             ),
           ),
         ],
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Divider(height: 1, color: AppTheme.divider),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(height: 1, color: AppTheme.border(context)),
         ),
       ),
       body: _isLoading
@@ -285,14 +285,14 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
 
                 // ── Per-account cards ────────────────────────────────────
                 _limits.isEmpty
-                    ? const SliverFillRemaining(
+                    ? SliverFillRemaining(
                         child: Center(
                           child: Text(
                             'No emails sent today yet.\nAccounts will appear here once you send.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontFamily: 'Inter',
-                              color: AppTheme.textMid,
+                              color: AppTheme.textSecondary(context),
                               fontSize: 15,
                             ),
                           ),
@@ -317,11 +317,11 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
                                   child: GlassContainer(
                                     borderRadius: 20,
                                     blurSigma: 12,
-                                    color: Colors.white.withValues(alpha: 0.85),
+                                    color: AppTheme.cardBg(context).withValues(alpha: 0.88),
                                     borderColor: limitReached
                                         ? AppTheme.errorRed
                                             .withValues(alpha: 0.35)
-                                        : AppTheme.divider,
+                                        : AppTheme.border(context),
                                     boxShadow: [
                                       BoxShadow(
                                         color: color.withValues(alpha: 0.08),
@@ -375,13 +375,12 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
                                                 children: [
                                                   Text(
                                                     sender,
-                                                    style: const TextStyle(
+                                                    style: TextStyle(
                                                       fontFamily: 'Outfit',
                                                       fontWeight:
                                                           FontWeight.w600,
                                                       fontSize: 14,
-                                                      color:
-                                                          AppTheme.textDark,
+                                                      color: AppTheme.textPrimary(context),
                                                     ),
                                                     maxLines: 1,
                                                     overflow:
@@ -397,7 +396,7 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
                                                       fontSize: 12,
                                                       color: limitReached
                                                           ? AppTheme.errorRed
-                                                          : AppTheme.textMid,
+                                                          : AppTheme.textSecondary(context),
                                                       fontWeight: limitReached
                                                           ? FontWeight.w600
                                                           : FontWeight.normal,

@@ -51,9 +51,10 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    final isDark = AppTheme.isDark(context);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.scaffoldBg(context),
       body: Stack(
         children: [
           // ── Decorative top-left blob ──────────────────────────────────
@@ -67,7 +68,7 @@ class _SplashScreenState extends State<SplashScreen>
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    AppTheme.primaryBlue.withOpacity(0.12),
+                    AppTheme.primaryBlue.withValues(alpha: isDark ? 0.22 : 0.12),
                     Colors.transparent,
                   ],
                 ),
@@ -85,7 +86,7 @@ class _SplashScreenState extends State<SplashScreen>
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    AppTheme.accentBlue.withOpacity(0.10),
+                    AppTheme.accentBlue.withValues(alpha: isDark ? 0.18 : 0.10),
                     Colors.transparent,
                   ],
                 ),
@@ -117,11 +118,11 @@ class _SplashScreenState extends State<SplashScreen>
                   borderRadius: 32,
                   blurSigma: 18,
                   padding: const EdgeInsets.all(20),
-                  color: Colors.white.withValues(alpha: 0.82),
-                  borderColor: AppTheme.primaryBlue.withValues(alpha: 0.18),
+                  color: (isDark ? AppTheme.darkCard : Colors.white).withValues(alpha: isDark ? 0.86 : 0.82),
+                  borderColor: (isDark ? AppTheme.lightBlue : AppTheme.primaryBlue).withValues(alpha: 0.24),
                   boxShadow: [
                     BoxShadow(
-                      color: AppTheme.primaryBlue.withValues(alpha: 0.14),
+                      color: AppTheme.primaryBlue.withValues(alpha: isDark ? 0.24 : 0.14),
                       blurRadius: 36,
                       offset: const Offset(0, 8),
                     ),
@@ -144,13 +145,13 @@ class _SplashScreenState extends State<SplashScreen>
                 const SizedBox(height: 28),
 
                 // App name
-                const Text(
+                Text(
                   'MailFlow',
                   style: TextStyle(
                     fontFamily: 'Outfit',
                     fontSize: 40,
                     fontWeight: FontWeight.w800,
-                    color: AppTheme.textDark,
+                    color: AppTheme.textPrimary(context),
                     letterSpacing: 1.5,
                   ),
                 )
@@ -167,7 +168,7 @@ class _SplashScreenState extends State<SplashScreen>
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 15,
-                    color: AppTheme.textMid,
+                    color: AppTheme.textSecondary(context),
                     letterSpacing: 0.4,
                   ),
                 )

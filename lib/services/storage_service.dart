@@ -1,11 +1,30 @@
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/template_item.dart';
 
-/// Local persistence for sender autocomplete history, extracted contacts, and templates.
+/// Local persistence for sender autocomplete history, extracted contacts, templates, and theme preference.
 class StorageService {
   static const String _sendersKey = 'saved_senders';
   static const String _contactsKey = 'saved_contacts';
   static const String _templatesKey = 'saved_templates';
+  static const String _themeModeKey = 'theme_mode';
+
+  static Future<ThemeMode> getThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    switch (prefs.getString(_themeModeKey)) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      default:
+        return ThemeMode.system;
+    }
+  }
+
+  static Future<void> saveThemeMode(ThemeMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_themeModeKey, mode.name);
+  }
 
   static Future<List<String>> getSenderEmails() async {
     final prefs = await SharedPreferences.getInstance();

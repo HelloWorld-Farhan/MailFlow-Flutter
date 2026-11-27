@@ -204,7 +204,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.cardBg(context),
         titlePadding: const EdgeInsets.fromLTRB(20, 20, 12, 0),
         contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
         title: Column(
@@ -212,9 +212,9 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
           children: [
             Row(children: [
               Expanded(child: Text(name,
-                  style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.textDark))),
+                  style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.textPrimary(context)))),
               IconButton(
-                  icon: const Icon(Icons.close, color: AppTheme.textMid, size: 20),
+                  icon: Icon(Icons.close, color: AppTheme.textSecondary(context), size: 20),
                   onPressed: () => Navigator.pop(context)),
             ]),
             const SizedBox(height: 4),
@@ -230,19 +230,19 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
               ),
               const SizedBox(width: 8),
               Expanded(child: Text('${email.scheduledDate} (${DateHelpers.weekdayName(email.scheduledDate)})  |  ${email.scheduledTime}',
-                  style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textLight),
+                  style: TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textSecondary(context)),
                   overflow: TextOverflow.ellipsis)),
             ]),
             if (email.pdfName != null && email.pdfName!.isNotEmpty) ...[
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.picture_as_pdf_rounded, size: 14, color: AppTheme.textMid),
+                  Icon(Icons.picture_as_pdf_rounded, size: 14, color: AppTheme.textSecondary(context)),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       email.pdfName!,
-                      style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textMid),
+                      style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textSecondary(context)),
                     ),
                   ),
                 ],
@@ -382,14 +382,14 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
         quotaData.values.any((m) => m.values.any((list) => list.isNotEmpty));
 
     return Scaffold(
-      backgroundColor: AppTheme.bgWhite,
+      backgroundColor: AppTheme.scaffoldBg(context),
       appBar: AppBar(
-        title: const Text('Email Groups',
-            style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+        title: Text('Email Groups',
+            style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, color: AppTheme.textPrimary(context))),
         backgroundColor: Colors.transparent,
         flexibleSpace: buildGlassAppBarBackground(),
         elevation: 0,
-        iconTheme: const IconThemeData(color: AppTheme.textDark),
+        iconTheme: IconThemeData(color: AppTheme.textPrimary(context)),
         surfaceTintColor: Colors.transparent,
       ),
       body: _isLoading
@@ -429,8 +429,8 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppTheme.divider)),
+        color: AppTheme.cardBg(context),
+        border: Border(bottom: BorderSide(color: AppTheme.border(context))),
       ),
       child: Column(
         children: [
@@ -446,24 +446,24 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              color: Colors.white,
+              color: AppTheme.cardBg(context),
               child: Row(
                 children: [
                   Container(
                     width: 32, height: 32,
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryBlue.withOpacity(0.08),
+                      color: AppTheme.primaryBlue.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(Icons.bar_chart_rounded, size: 18, color: AppTheme.primaryBlue),
                   ),
                   const SizedBox(width: 10),
-                  const Text('Scheduled Email Quota',
-                      style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 15, color: AppTheme.textDark)),
+                  Text('Scheduled Email Quota',
+                      style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 15, color: AppTheme.textPrimary(context))),
                   const Spacer(),
                   RotationTransition(
                     turns: Tween(begin: 0.0, end: 0.5).animate(_rotateCtrl),
-                    child: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.textMid),
+                    child: Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.textSecondary(context)),
                   ),
                 ],
               ),
@@ -544,7 +544,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 0,
-      color: Colors.white,
+      color: AppTheme.cardBg(context),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => _showRecipients(email),
@@ -554,8 +554,8 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isMerged
-                  ? const Color(0xFF8B5CF6).withOpacity(0.3)
-                  : AppTheme.divider,
+                  ? const Color(0xFF8B5CF6).withOpacity(0.35)
+                  : AppTheme.border(context),
               width: isMerged ? 1.5 : 1,
             ),
           ),
@@ -565,7 +565,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
               Row(children: [
                 Container(
                   width: 44, height: 44,
-                  decoration: BoxDecoration(color: typeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(color: typeColor.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
                   child: Icon(
                     isMerged ? Icons.merge_rounded : (email.type == 'PDF' ? Icons.picture_as_pdf_rounded : Icons.email_rounded),
                     color: typeColor, size: 20,
@@ -576,18 +576,18 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(displayName,
-                        style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textDark),
+                        style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textPrimary(context)),
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     if (email.pdfName != null && email.pdfName!.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Row(
                         children: [
-                          const Icon(Icons.picture_as_pdf_rounded, size: 12, color: AppTheme.textMid),
+                          Icon(Icons.picture_as_pdf_rounded, size: 12, color: AppTheme.textSecondary(context)),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
                               email.pdfName!,
-                              style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.textMid),
+                              style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.textSecondary(context)),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
