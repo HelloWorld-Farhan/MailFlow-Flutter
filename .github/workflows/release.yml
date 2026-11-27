@@ -221,6 +221,35 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate Clean Release Notes
+        run: |
+          CURRENT_TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -Fxv "$CURRENT_TAG" | head -n 1 || true)
+          {
+            echo "## What's Changed in MailFlow $CURRENT_TAG"
+            echo ""
+            COMMITS=""
+            if [ -n "$PREV_TAG" ]; then
+              COMMITS=$(git log "${PREV_TAG}..${CURRENT_TAG}" --no-merges --pretty=format:"- %s (%h)" | head -n 25 || true)
+            fi
+            LINE_COUNT=$(printf '%s\n' "$COMMITS" | grep -c '^-' || true)
+            if [ "$LINE_COUNT" -le 2 ]; then
+              COMMITS=$(git log "$CURRENT_TAG" -n 8 --no-merges --pretty=format:"- %s (%h)" || true)
+            fi
+            if [ -n "$COMMITS" ]; then
+              echo "$COMMITS"
+            else
+              echo "- Maintenance release and stability improvements"
+            fi
+            echo ""
+            if [ -n "$PREV_TAG" ]; then
+              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${CURRENT_TAG}"
+            fi
+          } > release_notes.md
+          cat release_notes.md
 
       - name: Download APK
         uses: actions/download-artifact@v4
@@ -253,7 +282,9 @@ jobs:
           name: MailFlow ${{ github.ref_name }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+          make_latest: true
+          generate_release_notes: false
+          body_path: release_notes.md
           files: |
             release-assets/MailFlow-Android.apk
             release-assets/MailFlow-Windows-Setup.exe
