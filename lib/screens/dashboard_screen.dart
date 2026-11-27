@@ -2925,32 +2925,44 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   // â”€â”€ Section 3: Recipients â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _SectionHeader(title: '3  Recipients', icon: Icons.group_rounded),
                   const SizedBox(height: 10),
-                  // Type selector
+                  // Type selector (locked during edit so Single/Multiple/PDF cannot be switched)
                   Row(
                     children: ['Single', 'Multiple', 'PDF'].map((type) {
                       final sel = _sendType == type;
+                      final isEditLocked = widget.editEmail != null;
                       return Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => _sendType = type),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 250),
-                            margin: const EdgeInsets.only(right: 8),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            decoration: BoxDecoration(
-                              color: sel ? AppTheme.primaryBlue : AppTheme.bgSurface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: sel ? AppTheme.primaryBlue : AppTheme.divider,
-                              ),
-                            ),
-                            child: Center(
-                              child: Text(
-                                type,
-                                style: TextStyle(
-                                  fontFamily: 'Inter', fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: sel ? Colors.white : AppTheme.textMid,
+                          onTap: isEditLocked ? null : () => setState(() => _sendType = type),
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 200),
+                            opacity: (isEditLocked && !sel) ? 0.42 : 1.0,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 250),
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: sel ? AppTheme.primaryBlue : AppTheme.surfaceBg(context),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: sel ? AppTheme.primaryBlue : AppTheme.border(context),
                                 ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    type,
+                                    style: TextStyle(
+                                      fontFamily: 'Inter', fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: sel ? Colors.white : AppTheme.textSecondary(context),
+                                    ),
+                                  ),
+                                  if (isEditLocked && sel) ...[
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.lock_rounded, size: 12, color: Colors.white),
+                                  ],
+                                ],
                               ),
                             ),
                           ),
@@ -2989,7 +3001,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
 
                   if (_sendType == 'PDF') ...[
                     GestureDetector(
-                      onTap: _pickPdf,
+                      onTap: widget.editEmail != null ? null : _pickPdf,
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(20),
@@ -3476,30 +3488,27 @@ class _DateFieldWithQuickButtons extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            Row(
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (weekdayStr.isNotEmpty)
-                  Expanded(
-                    child: Text(
-                      weekdayStr,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: accent,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Inter',
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                  Text(
+                    weekdayStr,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: accent,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Inter',
                     ),
-                  )
-                else
-                  const Spacer(),
+                  ),
                 _quickDateChip(
                   context,
                   label: 'Today',
                   accent: accent,
                   onTap: () => controller.text = DateHelpers.todayDmy(),
                 ),
-                const SizedBox(width: 6),
                 _quickDateChip(
                   context,
                   label: 'Tomorrow',
