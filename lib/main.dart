@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
+import 'services/app_config.dart';
+import 'services/backend_service.dart';
 import 'services/dispatcher.dart';
 
 void main() async {
@@ -10,7 +12,12 @@ void main() async {
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
   ));
-  await BackgroundDispatcher.start();
+  await AppConfig.load();
+  if (AppConfig.isBackendEnabled) {
+    await BackendService.startRealtime();
+  } else {
+    await BackgroundDispatcher.start();
+  }
   runApp(const MailFlowApp());
 }
 

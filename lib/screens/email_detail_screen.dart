@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../models/scheduled_email.dart';
+import '../services/app_config.dart';
+import '../services/backend_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 
@@ -41,6 +43,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
   bool _isLoading = true;
   Timer? _refreshTimer;
   Timer? _midnightTimer;
+  StreamSubscription<void>? _realtimeSub;
   bool _quotaPanelOpen = true;
   late AnimationController _rotateCtrl;
 
@@ -51,7 +54,11 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
         vsync: this, duration: const Duration(milliseconds: 300));
     _rotateCtrl.forward();
     _loadGroups();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) => _loadGroups(silent: true));
+    if (AppConfig.isBackendEnabled) {
+      _realtimeSub = BackendService.onDataChanged.listen((_) => _loadGroups(silent: true));
+    } else {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) => _loadGroups(silent: true));
+    }
     _scheduleMidnightRefresh();
   }
 
@@ -67,6 +74,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
 
   @override
   void dispose() {
+    _realtimeSub?.cancel();
     _refreshTimer?.cancel();
     _midnightTimer?.cancel();
     _rotateCtrl.dispose();
@@ -74,17 +82,27 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
   }
 
   Future<void> _loadGroups({bool silent = false}) async {
-    final allEmails = await StorageService.getEmails();
-    if (!mounted) return;
-    setState(() {
-      // Filter out successfully sent emails from showing up in the group list
-      _allEmails = allEmails.where((e) => e.status != 'Success').toList();
-      if (!silent) _isLoading = false;
-    });
+    try {
+      final allEmails = AppConfig.isBackendEnabled
+          ? await BackendService.fetchCampaigns()
+          : await StorageService.getEmails();
+      if (!mounted) return;
+      setState(() {
+        // Filter out successfully sent emails from showing up in the group list
+        _allEmails = allEmails.where((e) => e.status != 'Success').toList();
+        if (!silent) _isLoading = false;
+      });
+    } catch (_) {
+      if (mounted && !silent) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _deleteGroup(String id) async {
-    await StorageService.deleteEmail(id);
+    if (AppConfig.isBackendEnabled) {
+      await BackendService.deleteCampaign(id);
+    } else {
+      await StorageService.deleteEmail(id);
+    }
     _loadGroups();
   }
 
@@ -217,16 +235,9 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
 
   Color _statusColor(String status) {
     if (status == 'Success') return AppTheme.successGreen;
-    if (status.startsWith('Doing') || status.startsWith('Merge Day') || status.startsWith('Day ')) return AppTheme.primaryBlue;
-    if (status == 'Failed') return AppTheme.errorRed;
+    if (status.startsWith('Doing') || status.startsWith('Merge Day') || status.startsWith('Day ') || status == 'Running') return AppTheme.primaryBlue;
+    if (status.startsWith('Failed')) return AppTheme.errorRed;
     return AppTheme.warningAmber;
-  }
-
-  IconData _statusIcon(String status) {
-    if (status == 'Success') return Icons.check_circle_rounded;
-    if (status.startsWith('Doing') || status.startsWith('Merge Day') || status.startsWith('Day ')) return Icons.sync_rounded;
-    if (status == 'Failed') return Icons.cancel_rounded;
-    return Icons.schedule_rounded;
   }
 
   Color _typeColor(String type, bool isMerged) {
@@ -380,14 +391,14 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
                     final rStatus = email.recipientStatuses[r] ?? 'pending';
                     final rColor = rStatus == 'sent'
                         ? AppTheme.successGreen
-                        : rStatus == 'failed'
+                        : rStatus.startsWith('failed')
                             ? AppTheme.errorRed
                             : rStatus == 'inProcess'
                                 ? AppTheme.primaryBlue
                                 : AppTheme.textLight;
                     final rIcon = rStatus == 'sent'
                         ? Icons.check_circle_rounded
-                        : rStatus == 'failed'
+                        : rStatus.startsWith('failed')
                             ? Icons.cancel_rounded
                             : rStatus == 'inProcess'
                                 ? Icons.sync_rounded

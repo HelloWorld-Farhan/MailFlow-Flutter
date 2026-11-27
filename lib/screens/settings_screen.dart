@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/template_item.dart';
+import '../services/app_config.dart';
+import '../services/backend_service.dart';
+import '../services/dispatcher.dart';
 import '../services/storage_service.dart';
 import 'package:flutter/services.dart' as import_services;
 
@@ -16,11 +19,39 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   List<TemplateItem> _subjects = [];
   List<TemplateItem> _bodies = [];
 
+  final _supabaseUrlCtrl = TextEditingController();
+  final _supabaseAnonKeyCtrl = TextEditingController();
+  final _backendUrlCtrl = TextEditingController();
+  final _backendSecretCtrl = TextEditingController();
+  final _googleWebClientIdCtrl = TextEditingController();
+  bool _testingBackend = false;
+  String? _backendStatusMsg;
+  bool _backendStatusOk = false;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
+    _supabaseUrlCtrl.text = AppConfig.supabaseUrl;
+    _supabaseAnonKeyCtrl.text = AppConfig.supabaseAnonKey;
+    _backendUrlCtrl.text = AppConfig.backendApiUrl;
+    _backendSecretCtrl.text = AppConfig.backendApiSecret;
+    _googleWebClientIdCtrl.text = AppConfig.googleWebClientId;
     _loadTemplates();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _supabaseUrlCtrl.dispose();
+    _supabaseAnonKeyCtrl.dispose();
+    _backendUrlCtrl.dispose();
+    _backendSecretCtrl.dispose();
+    _googleWebClientIdCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadTemplates() async {
@@ -270,6 +301,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           tabs: const [
             Tab(text: 'Subjects'),
             Tab(text: 'Bodies'),
+            Tab(text: 'Backend'),
           ],
         ),
       ),
@@ -278,14 +310,149 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         children: [
           _buildList(_subjects, 'Subject'),
           _buildList(_bodies, 'Body'),
+          _buildBackendTab(),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showTemplateModal(type: _tabController.index == 0 ? 'Subject' : 'Body'),
-        label: const Text('New Template', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-        icon: const Icon(Icons.add_rounded),
-        backgroundColor: AppTheme.primaryBlue,
-      ),
+      floatingActionButton: _tabController.index < 2
+          ? FloatingActionButton.extended(
+              onPressed: () => _showTemplateModal(type: _tabController.index == 0 ? 'Subject' : 'Body'),
+              label: const Text('New Template', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+              icon: const Icon(Icons.add_rounded),
+              backgroundColor: AppTheme.primaryBlue,
+            )
+          : null,
+    );
+  }
+
+  Future<void> _saveBackendConfig({bool testHealth = false}) async {
+    setState(() {
+      _testingBackend = true;
+      _backendStatusMsg = null;
+    });
+    await AppConfig.saveOverrides(
+      supabaseUrlValue: _supabaseUrlCtrl.text,
+      supabaseAnonKeyValue: _supabaseAnonKeyCtrl.text,
+      backendApiUrlValue: _backendUrlCtrl.text,
+      backendApiSecretValue: _backendSecretCtrl.text,
+      googleWebClientIdValue: _googleWebClientIdCtrl.text,
+    );
+    if (AppConfig.isBackendEnabled) {
+      BackgroundDispatcher.stop();
+      await BackendService.startRealtime();
+    } else {
+      await BackendService.stopRealtime();
+    }
+
+    if (testHealth) {
+      try {
+        final health = await BackendService.checkHealth();
+        if (mounted) {
+          setState(() {
+            _backendStatusOk = true;
+            _backendStatusMsg = 'Connected! Max ${health['maxDailyPerSender'] ?? 50}/day per sender.';
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _backendStatusOk = false;
+            _backendStatusMsg = e.toString().replaceFirst('Exception: ', '');
+          });
+        }
+      }
+    } else if (mounted) {
+      setState(() {
+        _backendStatusOk = AppConfig.isBackendEnabled;
+        _backendStatusMsg = AppConfig.isBackendEnabled
+            ? 'Backend configuration saved & Realtime started.'
+            : 'Saved. Fill all Backend & Supabase fields to enable cloud scheduling.';
+      });
+    }
+    if (mounted) setState(() => _testingBackend = false);
+  }
+
+  Widget _buildBackendTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppTheme.primaryBlue.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.primaryBlue.withValues(alpha: 0.2)),
+          ),
+          child: const Text(
+            'Cloudflare Worker + Supabase Realtime runs campaigns 24/7 with parallel per-sender dispatch and zero polling. Values stay local on your device.',
+            style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textDark),
+          ),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _backendUrlCtrl,
+          decoration: const InputDecoration(labelText: 'Backend Worker URL', hintText: 'https://...workers.dev'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _backendSecretCtrl,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Backend API Secret'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _supabaseUrlCtrl,
+          decoration: const InputDecoration(labelText: 'Supabase Project URL', hintText: 'https://...supabase.co'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _supabaseAnonKeyCtrl,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Supabase Anon Key'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _googleWebClientIdCtrl,
+          decoration: const InputDecoration(labelText: 'Google OAuth Web Client ID'),
+        ),
+        if (_backendStatusMsg != null) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: (_backendStatusOk ? AppTheme.successGreen : AppTheme.errorRed).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: (_backendStatusOk ? AppTheme.successGreen : AppTheme.errorRed).withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              _backendStatusMsg!,
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _backendStatusOk ? AppTheme.successGreen : AppTheme.errorRed,
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _testingBackend ? null : () => _saveBackendConfig(testHealth: true),
+                child: Text(_testingBackend ? 'Testing...' : 'Test Connection'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _testingBackend ? null : () => _saveBackendConfig(testHealth: false),
+                child: const Text('Save & Connect'),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -8,6 +8,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scheduled_email.dart';
+import '../services/app_config.dart';
+import '../services/backend_service.dart';
 import '../services/storage_service.dart';
 import '../utils/date_input_formatter.dart';
 import '../utils/time_input_formatter.dart';
@@ -62,6 +64,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _totalDailySent = 0;
 
   Timer? _refreshTimer;
+  StreamSubscription<void>? _realtimeSub;
   String _currentVersion = '1.0.0';
   bool _hasUpdate = false;
   String? _latestVersion;
@@ -73,9 +76,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _checkPermissions();
     _loadHistory();
     _initVersionAndCheckUpdate();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _loadHistory();
-    });
+    if (AppConfig.isBackendEnabled) {
+      _realtimeSub = BackendService.onDataChanged.listen((_) => _loadHistory());
+    } else {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        _loadHistory();
+      });
+    }
   }
 
   Future<void> _initVersionAndCheckUpdate() async {
@@ -108,11 +115,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
+    _realtimeSub?.cancel();
     _refreshTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _loadHistory() async {
+    if (AppConfig.isBackendEnabled) {
+      try {
+        final history = await BackendService.fetchCampaigns();
+        final limitsMap = await BackendService.fetchDailyLimits();
+        final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
+        if (!mounted) return;
+        setState(() {
+          _history = history;
+          _totalDailySent = totalSent;
+          _isLoading = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _isLoading = false);
+      }
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     final history = await StorageService.getEmails();
@@ -169,12 +194,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (confirm != true) return;
 
-    await StorageService.deleteEmail(id);
+    if (AppConfig.isBackendEnabled) {
+      await BackendService.deleteCampaign(id);
+    } else {
+      await StorageService.deleteEmail(id);
+    }
     _loadHistory();
   }
 
   Future<void> _stopEmail(ScheduledEmail email) async {
-    await StorageService.updateEmail(email.copyWith(status: 'Paused'));
+    if (AppConfig.isBackendEnabled) {
+      await BackendService.pauseCampaign(email.id);
+    } else {
+      await StorageService.updateEmail(email.copyWith(status: 'Paused'));
+    }
     _loadHistory();
   }
 
@@ -206,6 +239,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
       if (confirm != true) return;
       forceWeekend = true;
+    }
+
+    if (AppConfig.isBackendEnabled) {
+      await BackendService.resumeCampaign(email.id, forceWeekend: forceWeekend);
+      _loadHistory();
+      return;
     }
 
     final sentCount = email.sentCount;
@@ -714,9 +753,9 @@ class _EmailCard extends StatelessWidget {
 
   Color _statusColor() {
     if (item.status == 'Success') return AppTheme.successGreen;
-    if (item.status == 'Failed') return AppTheme.errorRed;
+    if (item.status.startsWith('Failed')) return AppTheme.errorRed;
     if (item.status == 'Paused') return Colors.grey;
-    if (item.status.startsWith('Doing') || item.status.startsWith('Sending') || item.status.startsWith('Day')) return AppTheme.primaryBlue;
+    if (item.status.startsWith('Doing') || item.status.startsWith('Sending') || item.status.startsWith('Day') || item.status.startsWith('Merge Day') || item.status == 'Running') return AppTheme.primaryBlue;
     return AppTheme.warningAmber;
   }
 
@@ -726,11 +765,12 @@ class _EmailCard extends StatelessWidget {
     return item.status;
   }
 
-  bool get _isActive => item.status.startsWith('Doing') || item.status.startsWith('Sending') || item.status.startsWith('Day ');
+  bool get _isActive => item.status.startsWith('Doing') || item.status.startsWith('Sending') || item.status.startsWith('Day ') || item.status.startsWith('Merge Day') || item.status == 'Running';
   bool get _isPaused => item.status == 'Paused';
   bool get _isSuccess => item.status == 'Success';
-  bool get _isFailed => item.status == 'Failed';
+  bool get _isFailed => item.status.startsWith('Failed');
   bool get _isPdfCampaign => item.type == 'PDF' && item.dailyLimit > 0;
+  bool get _isPausable => _isPdfCampaign || item.type == 'Multiple' || item.isMerged;
 
   @override
   Widget build(BuildContext context) {
@@ -820,15 +860,15 @@ class _EmailCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Row(children: [
-                           // Resend button â€” show when done or failed
-                          if (_isSuccess || _isFailed || item.status.startsWith('Daily limit'))
+                           // Resend button — show when done or failed
+                          if (_isSuccess || _isFailed || item.status.startsWith('Daily limit') || item.status.startsWith('Limit Reached'))
                             _ActionBtn(icon: Icons.replay_circle_filled_rounded, color: AppTheme.primaryBlue, onTap: onResend),
-                          // Edit button â€” show for everything except completed
+                          // Edit button — show for everything except completed
                           if (!_isSuccess && !_isFailed)
                             _ActionBtn(icon: Icons.edit_rounded, color: AppTheme.primaryBlue, onTap: onEdit),
-                          if (_isPdfCampaign && _isActive)
+                          if (_isPausable && (_isActive || item.status == 'Scheduled'))
                             _ActionBtn(icon: Icons.pause_circle_rounded, color: AppTheme.warningAmber, onTap: onStop),
-                          if (_isPdfCampaign && _isPaused)
+                          if (_isPausable && _isPaused)
                             _ActionBtn(icon: Icons.play_circle_rounded, color: AppTheme.successGreen, onTap: onResume),
                           const SizedBox(width: 4),
                           _ActionBtn(icon: Icons.delete_rounded, color: AppTheme.errorRed, onTap: onDelete),
@@ -1104,7 +1144,7 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                         icon = Icons.check_circle_rounded; color = AppTheme.successGreen;
                       } else if (rStatus == 'inProcess') {
                         icon = Icons.sync_rounded; color = AppTheme.primaryBlue;
-                      } else if (rStatus == 'failed') {
+                      } else if (rStatus != null && rStatus.startsWith('failed')) {
                         icon = Icons.cancel_rounded; color = AppTheme.errorRed;
                       } else {
                         icon = Icons.radio_button_unchecked_rounded; color = AppTheme.textLight;
@@ -1178,9 +1218,15 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   List<String> _suggestedSenders = [];
   bool _isAuthenticated = false;
   bool _isAuthenticating = false; // Shows spinner while Google sign-in is in progress
-  final _googleSignIn = GoogleSignIn(
-    clientId: '787471915530-sg4ul6fm6s1paqabljmksi9c61cf4c77.apps.googleusercontent.com',
-    scopes: ['email', 'https://www.googleapis.com/auth/gmail.send'],
+  late final GoogleSignIn _googleSignIn = GoogleSignIn(
+    clientId: (kIsWeb || (!kIsWeb && Platform.isMacOS)) && AppConfig.googleWebClientId.isNotEmpty
+        ? AppConfig.googleWebClientId
+        : null,
+    serverClientId: (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) && AppConfig.googleWebClientId.isNotEmpty
+        ? AppConfig.googleWebClientId
+        : null,
+    forceCodeForRefreshToken: true,
+    scopes: const ['email', 'https://www.googleapis.com/auth/gmail.send'],
   );
 
   final _scheduleNameController = TextEditingController();
@@ -1263,16 +1309,28 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   void _onSenderChanged() async {
     final email = _senderController.text.trim();
     if (_isValidEmail(email)) {
-      final sentCount = await StorageService.getDailySentCount(email);
-      if (mounted) setState(() {
-        _currentSenderUsage = sentCount;
-        _dateQuotaFull = sentCount >= 50;
-      });
+      int sentCount = 0;
+      if (AppConfig.isBackendEnabled) {
+        try {
+          final limits = await BackendService.fetchDailyLimits();
+          sentCount = limits[email] ?? 0;
+        } catch (_) {}
+      } else {
+        sentCount = await StorageService.getDailySentCount(email);
+      }
+      if (mounted) {
+        setState(() {
+          _currentSenderUsage = sentCount;
+          _dateQuotaFull = sentCount >= 50;
+        });
+      }
     } else {
-      if (mounted) setState(() {
-        _currentSenderUsage = 0;
-        _dateQuotaFull = false;
-      });
+      if (mounted) {
+        setState(() {
+          _currentSenderUsage = 0;
+          _dateQuotaFull = false;
+        });
+      }
     }
   }
 
@@ -1300,23 +1358,37 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       await _googleSignIn.signOut();
       final account = await _googleSignIn.signIn();
       if (account != null) {
-        // Save the access token immediately so background dispatcher can use it
+        // Save the access token locally for fallback mode
         final auth = await account.authentication;
         if (auth.accessToken != null) {
           await StorageService.saveAccessToken(account.email, auth.accessToken!);
         }
-        setState(() { _isAuthenticated = true; _isAuthenticating = false; _senderController.text = account.email; });
+        if (AppConfig.isBackendEnabled) {
+          final authCode = account.serverAuthCode;
+          if (authCode == null || authCode.isEmpty) {
+            if (mounted) setState(() => _isAuthenticating = false);
+            _showMsg('sender', 'Missing Google offline auth code. Check Google Web Client ID in Settings > Backend.');
+            return;
+          }
+          await BackendService.exchangeServerAuthCode(authCode);
+        }
+        if (mounted) {
+          setState(() {
+            _isAuthenticated = true;
+            _isAuthenticating = false;
+            _senderController.text = account.email;
+          });
+        }
         await StorageService.saveSenderEmail(account.email);
         // Register with dispatcher cache
         BackgroundDispatcher.registerSignedInAccount(account);
         _showMsg('sender', 'Authenticated as ${account.email}!', isError: false);
       } else {
-        setState(() => _isAuthenticating = false);
+        if (mounted) setState(() => _isAuthenticating = false);
       }
-    } catch (_) {
-      setState(() { _isAuthenticated = true; _isAuthenticating = false; _senderController.text = currentEmail; });
-      await StorageService.saveSenderEmail(currentEmail);
-      _showMsg('sender', 'Sender saved!', isError: false);
+    } catch (e) {
+      if (mounted) setState(() => _isAuthenticating = false);
+      _showMsg('sender', 'Authentication failed: $e');
     }
   }
 
@@ -1501,6 +1573,19 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       }
     }
 
+    if (AppConfig.isBackendEnabled) {
+      try {
+        if (widget.editEmail != null) {
+          await BackendService.deleteCampaign(widget.editEmail!.id);
+        }
+        await BackendService.createCampaign(newEmail);
+        if (mounted) Navigator.pop(context);
+      } catch (e) {
+        _showMsg('date', 'Backend error: $e');
+      }
+      return;
+    }
+
     if (widget.editEmail != null) {
       await StorageService.updateEmail(newEmail);
     } else {
@@ -1511,7 +1596,9 @@ class _ScheduleModalState extends State<_ScheduleModal> {
 
   // Returns the conflicting PDF schedule if a future date overlap is found
   Future<ScheduledEmail?> _checkPdfConflict(ScheduledEmail newPdf) async {
-    final allEmails = await StorageService.getEmails();
+    final allEmails = AppConfig.isBackendEnabled
+        ? await BackendService.fetchCampaigns()
+        : await StorageService.getEmails();
     final startDate = _parseDate(newPdf.scheduledDate);
     if (startDate == null) return null;
     final dailyLimit = newPdf.dailyLimit > 0 ? newPdf.dailyLimit : 40;
@@ -1613,7 +1700,11 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                 Navigator.pop(ctx);
                 // Save new PDF with queuedAfter set to conflicting PDF's ID
                 final queued = newPdf.copyWith(queuedAfter: conflictingPdf.id, scheduledDate: queueDateStr);
-                await StorageService.saveEmail(queued);
+                if (AppConfig.isBackendEnabled) {
+                  await BackendService.createCampaign(queued);
+                } else {
+                  await StorageService.saveEmail(queued);
+                }
                 if (mounted) Navigator.pop(context);
               },
             ),
@@ -1674,15 +1765,22 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       scheduleName: 'Merge: $existingName + $newName',
       pdfName: existingPdf.pdfName ?? existingPdf.scheduleName ?? 'Merged PDF',
       dailyLimit: dailyLimit,
-      sentCount: existingPdf.sentCount, // already sent from existing
+      sentCount: 0,
       lastSentDate: existingPdf.lastSentDate,
+      delayMinutes: newPdf.delayMinutes,
       isMerged: true,
       mergedSourceIds: [existingPdf.id, newPdf.id],
       mergeContributions: {existingPdf.id: allocExisting, newPdf.id: allocNew},
       mergeSourceNames: {existingPdf.id: existingName, newPdf.id: newName},
     );
 
-    // Delete BOTH original PDFs â€” only the merged campaign should remain
+    if (AppConfig.isBackendEnabled) {
+      await BackendService.deleteCampaign(existingPdf.id);
+      await BackendService.createCampaign(merged);
+      return;
+    }
+
+    // Delete BOTH original PDFs — only the merged campaign should remain
     await StorageService.deleteEmail(existingPdf.id);
     await StorageService.deleteEmail(newPdf.id);
     // Save merged schedule
@@ -2635,6 +2733,17 @@ class _ResendModalState extends State<_ResendModal> {
       clearQueuedAfter: true,
     );
     
+    if (AppConfig.isBackendEnabled) {
+      try {
+        await BackendService.deleteCampaign(widget.email.id);
+        await BackendService.createCampaign(newEmail);
+        if (mounted) Navigator.pop(context);
+      } catch (e) {
+        _showMsg('Backend error: $e');
+      }
+      return;
+    }
+
     await StorageService.updateEmail(newEmail); // Overwrite the old one!
     if (mounted) Navigator.pop(context);
   }

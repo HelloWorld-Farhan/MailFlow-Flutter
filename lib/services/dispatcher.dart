@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+import 'app_config.dart';
 import 'storage_service.dart';
 import 'mail_service.dart';
 import '../models/scheduled_email.dart';
@@ -25,8 +26,9 @@ class BackgroundDispatcher {
 
   static GoogleSignIn _getSignIn(String senderEmail) {
     if (!_signInCache.containsKey(senderEmail)) {
+      final clientId = AppConfig.googleWebClientId;
       _signInCache[senderEmail] = GoogleSignIn(
-        clientId: '787471915530-sg4ul6fm6s1paqabljmksi9c61cf4c77.apps.googleusercontent.com',
+        clientId: clientId.isNotEmpty ? clientId : null,
         scopes: ['email', 'https://www.googleapis.com/auth/gmail.send'],
         forceAccountName: senderEmail,
       );

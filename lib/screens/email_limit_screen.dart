@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../services/app_config.dart';
+import '../services/backend_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 
@@ -16,6 +18,7 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
   Map<String, int> _limits = {};
   bool _isLoading = true;
   Timer? _refreshTimer;
+  StreamSubscription<void>? _realtimeSub;
   late AnimationController _spinController;
   bool _isRefreshing = false;
 
@@ -27,10 +30,14 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
       duration: const Duration(milliseconds: 700),
     );
     _loadLimits();
-    // Auto-refresh every 5 seconds to reflect new sends
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _loadLimits(silent: true);
-    });
+    if (AppConfig.isBackendEnabled) {
+      _realtimeSub = BackendService.onDataChanged.listen((_) => _loadLimits(silent: true));
+    } else {
+      // Auto-refresh every 5 seconds in local-only mode
+      _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        _loadLimits(silent: true);
+      });
+    }
     // Schedule a one-shot timer to fire just after midnight to reset the display
     _scheduleMidnightReset();
   }
@@ -50,6 +57,7 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
 
   @override
   void dispose() {
+    _realtimeSub?.cancel();
     _refreshTimer?.cancel();
     _spinController.dispose();
     super.dispose();
@@ -58,21 +66,28 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
   Future<void> _loadLimits({bool silent = false}) async {
     if (!silent && mounted) setState(() => _isLoading = true);
 
-    final limits = await StorageService.getAllDailyLimits();
+    try {
+      final limits = AppConfig.isBackendEnabled
+          ? await BackendService.fetchDailyLimits()
+          : await StorageService.getAllDailyLimits();
 
-    // Only show accounts that have actually sent emails today (count > 0)
-    // Do NOT add saved senders with 0 — they should only appear once they
-    // have actually sent at least one email today.
-
-    if (mounted) {
-      setState(() {
-        _limits = Map.fromEntries(
-          limits.entries.where((e) => e.value > 0).toList()
-            ..sort((a, b) => b.value.compareTo(a.value)),
-        );
-        _isLoading = false;
-        _isRefreshing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _limits = Map.fromEntries(
+            limits.entries.where((e) => e.value > 0).toList()
+              ..sort((a, b) => b.value.compareTo(a.value)),
+          );
+          _isLoading = false;
+          _isRefreshing = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isRefreshing = false;
+        });
+      }
     }
   }
 

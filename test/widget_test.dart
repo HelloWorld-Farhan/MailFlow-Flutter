@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:mailflow/services/app_config.dart';
+import 'package:mailflow/services/backend_service.dart';
 import 'package:mailflow/theme/app_theme.dart';
 import 'package:mailflow/services/update_service.dart';
 
@@ -34,6 +37,28 @@ void main() {
       expect(release.platformDownloadUrl, release.windowsDownloadUrl);
       expect(release.platformAssetSize, 18500000);
     }
+  });
+
+  test('AppConfig stores dynamic URLs without trailing slashes', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AppConfig.saveOverrides(
+      supabaseUrlValue: 'https://demo.supabase.co/',
+      supabaseAnonKeyValue: 'anon-key',
+      backendApiUrlValue: 'https://worker.test/',
+      backendApiSecretValue: 'secret-key',
+      googleWebClientIdValue: 'web-client-id',
+    );
+    expect(AppConfig.isBackendEnabled, isTrue);
+    expect(AppConfig.supabaseUrl, 'https://demo.supabase.co');
+    expect(AppConfig.backendApiUrl, 'https://worker.test');
+  });
+
+  test('BackendService parses DD/MM/YYYY and 12-hour time accurately', () {
+    final am = BackendService.parseScheduleDateTime('27/11/2026', '12:05 AM');
+    final pm = BackendService.parseScheduleDateTime('27/11/2026', '02:30 PM');
+    expect(am, DateTime(2026, 11, 27, 0, 5));
+    expect(pm, DateTime(2026, 11, 27, 14, 30));
+    expect(BackendService.parseScheduleDateTime('invalid', '10:00 AM'), isNull);
   });
 
   testWidgets('AppTheme light theme initializes properly', (WidgetTester tester) async {
