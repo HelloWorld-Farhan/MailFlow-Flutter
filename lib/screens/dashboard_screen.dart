@@ -2318,15 +2318,58 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          widget.editEmail != null ? 'Edit Schedule' : (() {
-                            final d = DateHelpers.todayDmy();
-                            return 'New Schedule  $d (${DateHelpers.weekdayName(d)})';
-                          })(),
-                          style: TextStyle(fontFamily: 'Outfit', fontSize: widget.editEmail != null ? 22 : 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: widget.editEmail != null
+                              ? Text(
+                                  'Edit Schedule',
+                                  style: TextStyle(
+                                    fontFamily: 'Outfit',
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textPrimary(context),
+                                  ),
+                                )
+                              : (() {
+                                  final d = DateHelpers.todayDmy();
+                                  final wd = DateHelpers.weekdayName(d);
+                                  return Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'New Schedule',
+                                        style: TextStyle(
+                                          fontFamily: 'Outfit',
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppTheme.textPrimary(context),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.primaryBlue.withValues(alpha: 0.10),
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(color: AppTheme.primaryBlue.withValues(alpha: 0.24)),
+                                        ),
+                                        child: Text(
+                                          '$d ($wd)',
+                                          style: TextStyle(
+                                            fontFamily: 'Inter',
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                })(),
                         ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 10),
                       GestureDetector(
                         onTap: () => Navigator.pop(context),
                         child: Container(
@@ -2986,46 +3029,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: ValueListenableBuilder<TextEditingValue>(
-                          valueListenable: _dateController,
-                          builder: (context, value, child) {
-                            final weekdayStr = DateHelpers.weekdayName(value.text);
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                TextField(
-                                  controller: _dateController,
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [DateInputFormatter()],
-                                  decoration: const InputDecoration(
-                                    hintText: 'DD/MM/YYYY',
-                                    prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
-                                  ),
-                                ),
-                                Row(
-                                  children: [
-                                    if (weekdayStr.isNotEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 4, left: 4),
-                                        child: Text(weekdayStr, style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
-                                      ),
-                                    const Spacer(),
-                                    GestureDetector(
-                                      onTap: () {
-                                        final tomorrow = DateTime.now().add(const Duration(days: 1));
-                                        _dateController.text = '${tomorrow.day.toString().padLeft(2, '0')}/${tomorrow.month.toString().padLeft(2, '0')}/${tomorrow.year}';
-                                      },
-                                      child: const Padding(
-                                        padding: EdgeInsets.only(top: 4, right: 4),
-                                        child: Text('Tomorrow', style: TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w700, fontFamily: 'Inter', decoration: TextDecoration.underline)),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            );
-                          },
-                        ),
+                        child: _DateFieldWithQuickButtons(controller: _dateController),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -3097,6 +3101,100 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       ),
       ), // closes GestureDetector child: Container
     ); // closes GestureDetector
+  }
+}
+
+class _DateFieldWithQuickButtons extends StatelessWidget {
+  final TextEditingController controller;
+  const _DateFieldWithQuickButtons({required this.controller});
+
+  static String _formatDate(DateTime dt) =>
+      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue;
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, child) {
+        final weekdayStr = DateHelpers.weekdayName(value.text);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [DateInputFormatter()],
+              decoration: const InputDecoration(
+                hintText: 'DD/MM/YYYY',
+                prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                if (weekdayStr.isNotEmpty)
+                  Expanded(
+                    child: Text(
+                      weekdayStr,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: accent,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Inter',
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  )
+                else
+                  const Spacer(),
+                _quickDateChip(
+                  context,
+                  label: 'Today',
+                  accent: accent,
+                  onTap: () => controller.text = DateHelpers.todayDmy(),
+                ),
+                const SizedBox(width: 6),
+                _quickDateChip(
+                  context,
+                  label: 'Tomorrow',
+                  accent: accent,
+                  onTap: () => controller.text = _formatDate(DateTime.now().add(const Duration(days: 1))),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _quickDateChip(
+    BuildContext context, {
+    required String label,
+    required Color accent,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppTheme.primaryBlue.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppTheme.primaryBlue.withValues(alpha: 0.25)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: accent,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Inter',
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -3275,46 +3373,7 @@ class _ResendModalState extends State<_ResendModal> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: ValueListenableBuilder<TextEditingValue>(
-                          valueListenable: _dateController,
-                          builder: (context, value, child) {
-                            final weekdayStr = DateHelpers.weekdayName(value.text);
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                TextField(
-                                  controller: _dateController,
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [DateInputFormatter()],
-                                  decoration: const InputDecoration(
-                                    hintText: 'DD/MM/YYYY',
-                                    prefixIcon: Icon(Icons.calendar_today_rounded, size: 18),
-                                  ),
-                                ),
-                                Row(
-                                  children: [
-                                    if (weekdayStr.isNotEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 4, left: 4),
-                                        child: Text(weekdayStr, style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
-                                      ),
-                                    const Spacer(),
-                                    GestureDetector(
-                                      onTap: () {
-                                        final tomorrow = DateTime.now().add(const Duration(days: 1));
-                                        _dateController.text = '${tomorrow.day.toString().padLeft(2, '0')}/${tomorrow.month.toString().padLeft(2, '0')}/${tomorrow.year}';
-                                      },
-                                      child: const Padding(
-                                        padding: EdgeInsets.only(top: 4, right: 4),
-                                        child: Text('Tomorrow', style: TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.w700, fontFamily: 'Inter', decoration: TextDecoration.underline)),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            );
-                          },
-                        ),
+                        child: _DateFieldWithQuickButtons(controller: _dateController),
                       ),
                       const SizedBox(width: 12),
                       Expanded(

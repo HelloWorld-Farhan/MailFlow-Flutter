@@ -244,4 +244,11 @@ void main() {
     expect(dark.scaffoldBackgroundColor, AppTheme.darkBg);
     expect(dark.popupMenuTheme.color, AppTheme.darkCard);
   });
+
+  test('DateHelpers.todayDmy returns DD/MM/YYYY for today', () {
+    final now = DateTime.now();
+    final expected =
+        '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+    expect(DateHelpers.todayDmy(), expected);
+  });
 }
