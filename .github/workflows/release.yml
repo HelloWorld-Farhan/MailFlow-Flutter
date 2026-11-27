@@ -30,6 +30,9 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Install Dependencies
         run: flutter pub get
 
@@ -37,7 +40,7 @@ jobs:
         run: flutter test
 
       - name: Build Android APK
-        run: flutter build apk --release
+        run: flutter build apk --release || (sleep 15 && flutter build apk --release) || (sleep 30 && flutter build apk --release)
 
       - name: Prepare APK Asset
         run: cp build/app/outputs/flutter-apk/app-release.apk MailFlow-Android.apk
