@@ -31,6 +31,11 @@ void main() {
           'size': 18500000,
           'browser_download_url': 'https://github.com/HelloWorld-Farhan/MailFlow-Flutter/releases/download/v1.0.2/MailFlow-Windows-Setup.exe',
         },
+        {
+          'name': 'MailFlow-macOS.dmg',
+          'size': 22000000,
+          'browser_download_url': 'https://github.com/HelloWorld-Farhan/MailFlow-Flutter/releases/download/v1.0.2/MailFlow-macOS.dmg',
+        },
       ]
     });
 
@@ -39,21 +44,21 @@ void main() {
     expect(release.apkSize, 25000000);
     expect(release.windowsDownloadUrl, endsWith('.exe'));
     expect(release.windowsSize, 18500000);
+    expect(release.macosDownloadUrl, endsWith('.dmg'));
+    expect(release.macosSize, 22000000);
 
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-    try {
-      expect(release.platformDownloadUrl, release.windowsDownloadUrl);
-      expect(release.platformAssetSize, 18500000);
-    } finally {
-      debugDefaultTargetPlatformOverride = null;
-    }
-
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    try {
-      expect(release.platformDownloadUrl, release.apkDownloadUrl);
-      expect(release.platformAssetSize, 25000000);
-    } finally {
-      debugDefaultTargetPlatformOverride = null;
+    for (final entry in <(TargetPlatform, String?, int)>[
+      (TargetPlatform.windows, release.windowsDownloadUrl, 18500000),
+      (TargetPlatform.android, release.apkDownloadUrl, 25000000),
+      (TargetPlatform.macOS, release.macosDownloadUrl, 22000000),
+    ]) {
+      debugDefaultTargetPlatformOverride = entry.$1;
+      try {
+        expect(release.platformDownloadUrl, entry.$2);
+        expect(release.platformAssetSize, entry.$3);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     }
   });
 
@@ -145,17 +150,28 @@ void main() {
     expect(finish.first.activeParallelCount, 0);
   });
 
-  testWidgets('GlassContainer and BlurredPageRoute render cleanly', (WidgetTester tester) async {
+  testWidgets('GlassContainer, ResponsiveCenter, and BlurredPageRoute render cleanly',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: Builder(
-            builder: (context) => GlassContainer(
-              child: TextButton(
-                onPressed: () => Navigator.of(context).push(
-                  BlurredPageRoute(builder: (_) => const Scaffold(body: Text('GlassPage'))),
+          body: ResponsiveCenter(
+            maxWidth: 860,
+            child: Builder(
+              builder: (context) => GlassContainer(
+                child: SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      BlurredPageRoute(builder: (_) => const Scaffold(body: Text('GlassPage'))),
+                    ),
+                    child: const Text('Open Glass'),
+                  ),
                 ),
-                child: const Text('Open Glass'),
               ),
             ),
           ),
@@ -163,7 +179,8 @@ void main() {
       ),
     );
 
-    expect(find.text('Open Glass'), findsOneWidget);
+    final size = tester.getSize(find.byType(GlassContainer));
+    expect(size.width, 860);
     await tester.tap(find.text('Open Glass'));
     await tester.pumpAndSettle();
     expect(find.text('GlassPage'), findsOneWidget);

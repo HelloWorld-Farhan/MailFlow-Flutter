@@ -175,9 +175,10 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
+          : ResponsiveCenter(
+              child: CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
                 // ── Summary card ────────────────────────────────────────
                 SliverToBoxAdapter(
                   child: Padding(
@@ -434,50 +435,46 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
                                           ],
                                         ),
                                         const SizedBox(height: 14),
-                                        // Animated progress bar
-                                        Stack(
-                                          children: [
-                                            // Background
-                                            Container(
-                                              height: 10,
-                                              decoration: BoxDecoration(
-                                                color: color.withOpacity(0.1),
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
+                                        // Animated responsive progress bar
+                                        LayoutBuilder(
+                                          builder: (context, constraints) => Stack(
+                                            children: [
+                                              Container(
+                                                height: 10,
+                                                decoration: BoxDecoration(
+                                                  color: color.withValues(alpha: 0.1),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
                                               ),
-                                            ),
-                                            // Foreground
-                                            AnimatedContainer(
-                                              duration: const Duration(
-                                                  milliseconds: 600),
-                                              curve: Curves.easeOutCubic,
-                                              height: 10,
-                                              width: (MediaQuery.of(context)
-                                                              .size
-                                                              .width -
-                                                          68) *
-                                                      progress,
-                                              decoration: BoxDecoration(
-                                                gradient: LinearGradient(
-                                                  colors: [
-                                                    color,
-                                                    color.withOpacity(0.7),
+                                              AnimatedContainer(
+                                                duration: const Duration(
+                                                    milliseconds: 600),
+                                                curve: Curves.easeOutCubic,
+                                                height: 10,
+                                                width: constraints.maxWidth * progress,
+                                                decoration: BoxDecoration(
+                                                  gradient: LinearGradient(
+                                                    colors: [
+                                                      color,
+                                                      color.withValues(alpha: 0.7),
+                                                    ],
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: color
+                                                          .withValues(alpha: 0.4),
+                                                      blurRadius: 4,
+                                                      offset:
+                                                          const Offset(0, 2),
+                                                    ),
                                                   ],
                                                 ),
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: color
-                                                        .withOpacity(0.4),
-                                                    blurRadius: 4,
-                                                    offset:
-                                                        const Offset(0, 2),
-                                                  ),
-                                                ],
                                               ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
                                         const SizedBox(height: 6),
                                         Row(
@@ -554,6 +551,7 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
                 ),
               ],
             ),
+          ),
     );
   }
 }

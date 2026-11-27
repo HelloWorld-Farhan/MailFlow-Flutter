@@ -17,6 +17,7 @@ class EmailDetailScreen extends StatefulWidget {
 class _EmailDetailScreenState extends State<EmailDetailScreen>
     with SingleTickerProviderStateMixin {
   List<ScheduledEmail> _allEmails = [];
+  Map<String, Map<String, List<_DateContribution>>> _quotaCache = {};
   bool _isLoading = true;
   Timer? _refreshTimer;
   Timer? _midnightTimer;
@@ -59,9 +60,10 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
     try {
       final allEmails = await BackendService.fetchCampaigns();
       if (!mounted) return;
+      final active = allEmails.where((e) => e.status != 'Success').toList();
       setState(() {
-        // Filter out successfully sent emails from showing up in the group list
-        _allEmails = allEmails.where((e) => e.status != 'Success').toList();
+        _allEmails = active;
+        _quotaCache = _computeQuotaFrom(active);
         if (!silent) _isLoading = false;
       });
     } catch (_) {
@@ -78,12 +80,14 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
 
   /// Returns a map: senderEmail -> { dateStr -> List<(scheduleName, contribution)> }
   /// Only includes dates >= today and where at least one schedule is active (not Success/Failed)
-  Map<String, Map<String, List<_DateContribution>>> _computeQuota() {
+  Map<String, Map<String, List<_DateContribution>>> _computeQuotaFrom(
+    List<ScheduledEmail> emails,
+  ) {
     final today = DateTime.now();
     final todayNorm = DateTime(today.year, today.month, today.day);
     final result = <String, Map<String, List<_DateContribution>>>{};
 
-    for (final email in _allEmails) {
+    for (final email in emails) {
       // Skip fully completed
       if (email.status == 'Success' || email.status == 'Failed') continue;
       final sender = email.senderEmail;
@@ -161,30 +165,9 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
   }
 
   bool _hasOtherScheduleOnDate(String excludeId, String sender, String dateStr) {
-    final date = DateHelpers.parseDmy(dateStr);
-    if (date == null) return false;
-    for (final email in _allEmails) {
-      if (email.id == excludeId) continue;
-      if (email.senderEmail != sender) continue;
-      if (email.status == 'Success' || email.status == 'Failed') continue;
-      if (email.type == 'Single' || email.type == 'Multiple') {
-        if (email.scheduledDate == dateStr) return true;
-      } else if (email.type == 'PDF') {
-        final eStart = DateHelpers.parseDmy(email.scheduledDate);
-        if (eStart == null) continue;
-        final eDailyLimit = email.dailyLimit > 0 ? email.dailyLimit : 40;
-        final eTotalDays = (email.recipients.length / eDailyLimit).ceil();
-        final eEnd = eStart.add(Duration(days: eTotalDays - 1));
-        final norm = DateTime(date.year, date.month, date.day);
-        final normStart = DateTime(eStart.year, eStart.month, eStart.day);
-        final normEnd = DateTime(eEnd.year, eEnd.month, eEnd.day);
-        if ((norm.isAfter(normStart) || norm.isAtSameMomentAs(normStart)) &&
-            (norm.isBefore(normEnd) || norm.isAtSameMomentAs(normEnd))) {
-          return true;
-        }
-      }
-    }
-    return false;
+    final list = _quotaCache[sender]?[dateStr];
+    if (list == null) return false;
+    return list.any((entry) => entry.scheduleId != excludeId);
   }
 
   // ── Colors & Icons ─────────────────────────────────────────────────────
@@ -394,7 +377,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    final quotaData = _computeQuota();
+    final quotaData = _quotaCache;
     final hasQuota = quotaData.isNotEmpty &&
         quotaData.values.any((m) => m.values.any((list) => list.isNotEmpty));
 
@@ -411,7 +394,8 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : ResponsiveCenter(
+              child: Column(
               children: [
                 // ── Quota Panel ──────────────────────────────────────
                 if (hasQuota) _buildQuotaPanel(quotaData),
@@ -436,6 +420,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
                 ),
               ],
             ),
+          ),
     );
   }
 

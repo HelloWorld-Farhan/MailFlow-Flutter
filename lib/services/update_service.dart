@@ -17,6 +17,8 @@ class ReleaseInfo {
   final int apkSize;
   final String? windowsDownloadUrl;
   final int windowsSize;
+  final String? macosDownloadUrl;
+  final int macosSize;
 
   ReleaseInfo({
     required this.tagName,
@@ -28,12 +30,15 @@ class ReleaseInfo {
     this.apkSize = 0,
     this.windowsDownloadUrl,
     this.windowsSize = 0,
+    this.macosDownloadUrl,
+    this.macosSize = 0,
   });
 
   String? get platformDownloadUrl {
     if (kIsWeb) return null;
     if (defaultTargetPlatform == TargetPlatform.windows) return windowsDownloadUrl;
     if (defaultTargetPlatform == TargetPlatform.android) return apkDownloadUrl;
+    if (defaultTargetPlatform == TargetPlatform.macOS) return macosDownloadUrl;
     return null;
   }
 
@@ -41,6 +46,7 @@ class ReleaseInfo {
     if (kIsWeb) return 0;
     if (defaultTargetPlatform == TargetPlatform.windows) return windowsSize;
     if (defaultTargetPlatform == TargetPlatform.android) return apkSize;
+    if (defaultTargetPlatform == TargetPlatform.macOS) return macosSize;
     return 0;
   }
 
@@ -54,6 +60,8 @@ class ReleaseInfo {
     int apkSize = 0;
     String? windowsUrl;
     int windowsSize = 0;
+    String? macosUrl;
+    int macosSize = 0;
     final assets = json['assets'] as List<dynamic>?;
     if (assets != null) {
       for (final asset in assets) {
@@ -64,6 +72,9 @@ class ReleaseInfo {
         } else if (name.endsWith('.exe') && windowsUrl == null) {
           windowsUrl = asset['browser_download_url']?.toString();
           windowsSize = (asset['size'] as num?)?.toInt() ?? 0;
+        } else if (name.endsWith('.dmg') && macosUrl == null) {
+          macosUrl = asset['browser_download_url']?.toString();
+          macosSize = (asset['size'] as num?)?.toInt() ?? 0;
         }
       }
     }
@@ -78,6 +89,8 @@ class ReleaseInfo {
       apkSize: apkSize,
       windowsDownloadUrl: windowsUrl,
       windowsSize: windowsSize,
+      macosDownloadUrl: macosUrl,
+      macosSize: macosSize,
     );
   }
 }
@@ -199,7 +212,10 @@ class UpdateService {
       }
 
       final isWindows = !kIsWeb && Platform.isWindows;
-      final fileName = isWindows ? 'MailFlow-Windows-Setup.exe' : 'MailFlow-update.apk';
+      final isMacOs = !kIsWeb && Platform.isMacOS;
+      final fileName = isWindows
+          ? 'MailFlow-Windows-Setup.exe'
+          : (isMacOs ? 'MailFlow-macOS.dmg' : 'MailFlow-update.apk');
       final totalBytes = response.contentLength ?? 0;
       final tempDir = await getTemporaryDirectory();
       final saveFile = File('${tempDir.path}/$fileName');
@@ -225,7 +241,7 @@ class UpdateService {
       await sink.flush();
       await sink.close();
 
-      if (!isWindows && Platform.isAndroid) {
+      if (!isWindows && !isMacOs && Platform.isAndroid) {
         final allowed = await ensureInstallPermission();
         if (!allowed) {
           throw Exception('Please allow "Install unknown apps" for MailFlow in Android Settings and tap Retry.');
@@ -235,7 +251,7 @@ class UpdateService {
       // Launch installer (preserves existing app data across upgrades)
       final result = await OpenFilex.open(
         saveFile.path,
-        type: isWindows ? null : 'application/vnd.android.package-archive',
+        type: (isWindows || isMacOs) ? null : 'application/vnd.android.package-archive',
       );
 
       if (result.type != ResultType.done) {

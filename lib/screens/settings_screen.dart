@@ -282,12 +282,14 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildList(_subjects, 'Subject'),
-          _buildList(_bodies, 'Body'),
-        ],
+      body: ResponsiveCenter(
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            _buildList(_subjects, 'Subject'),
+            _buildList(_bodies, 'Body'),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showTemplateModal(type: _tabController.index == 0 ? 'Subject' : 'Body'),

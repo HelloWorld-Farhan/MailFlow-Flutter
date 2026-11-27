@@ -2,6 +2,34 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
+/// Centers content cleanly on tablets/desktops while filling phones edge-to-edge.
+class ResponsiveCenter extends StatelessWidget {
+  final Widget child;
+  final double maxWidth;
+  final EdgeInsetsGeometry? padding;
+
+  const ResponsiveCenter({
+    super.key,
+    required this.child,
+    this.maxWidth = 860,
+    this.padding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget content = Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: child,
+      ),
+    );
+    if (padding != null) {
+      content = Padding(padding: padding!, child: content);
+    }
+    return content;
+  }
+}
+
 /// Translucent frosted-glass surface with backdrop blur and soft border.
 class GlassContainer extends StatelessWidget {
   final Widget child;

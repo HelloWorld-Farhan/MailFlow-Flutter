@@ -1,5 +1,0 @@
-﻿
-07-24 01:45:17.294  8021  8021 I adbd    : adbd service requested 'shell,v2:export ANDROID_LOG_TAGS="''"; exec logcat 
-'-d' '-s' 'flutter' '-t' '500''
-
-

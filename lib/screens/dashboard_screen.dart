@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:math' show min;
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -142,9 +143,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (await Permission.notification.isDenied) {
       await Permission.notification.request();
     }
-    if (await Permission.scheduleExactAlarm.isDenied) {
-      await Permission.scheduleExactAlarm.request();
-    }
   }
 
   @override
@@ -223,7 +221,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       useSafeArea: true,
       builder: (context) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: _ScheduleModal(editEmail: existingEmail),
+        child: ResponsiveCenter(
+          maxWidth: 640,
+          child: _ScheduleModal(editEmail: existingEmail),
+        ),
       ),
     ).then((_) => _loadHistory());
   }
@@ -237,7 +238,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       barrierColor: Colors.black.withValues(alpha: 0.28),
       builder: (context) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: _ResendModal(email: email),
+        child: ResponsiveCenter(
+          maxWidth: 640,
+          child: _ResendModal(email: email),
+        ),
       ),
     ).then((_) => _loadHistory());
   }
@@ -336,11 +340,25 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Compute summary metrics & active list in a single O(N) pass.
+    int scheduledCount = 0;
+    int sentCount = 0;
+    final active = <ScheduledEmail>[];
+    for (final e in _history) {
+      if (e.status == 'Success') {
+        sentCount++;
+      } else {
+        if (!e.status.startsWith('Failed')) scheduledCount++;
+        if (SendNotificationMonitor.isActiveStatus(e.status)) active.add(e);
+      }
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.bgWhite,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
+      body: ResponsiveCenter(
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
           // ── App Bar ───────────────────────────────────────────────────────
           SliverAppBar(
             floating: true,
@@ -552,36 +570,29 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
 
           // ── In-App Live Sending / Parallel Activity Notification Hub ─────
-          ...() {
-            final active = _history
-                .where((e) => SendNotificationMonitor.isActiveStatus(e.status))
-                .toList();
-            if (active.isEmpty && _latestAlert == null) return const <Widget>[];
-            return <Widget>[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Column(
-                    children: [
-                      if (_latestAlert != null)
-                        _RealtimeEventBanner(
-                          event: _latestAlert!,
-                          onTap: () => _showEmailDetails(_latestAlert!.email),
-                          onDismiss: () => setState(() => _latestAlert = null),
-                        ),
-                      if (_latestAlert != null && active.isNotEmpty)
-                        const SizedBox(height: 10),
-                      if (active.isNotEmpty)
-                        _LiveParallelSendingPanel(
-                          activeCampaigns: active,
-                          onTapCampaign: _showEmailDetails,
-                        ),
-                    ],
-                  ),
+          if (active.isNotEmpty || _latestAlert != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Column(
+                  children: [
+                    if (_latestAlert != null)
+                      _RealtimeEventBanner(
+                        event: _latestAlert!,
+                        onTap: () => _showEmailDetails(_latestAlert!.email),
+                        onDismiss: () => setState(() => _latestAlert = null),
+                      ),
+                    if (_latestAlert != null && active.isNotEmpty)
+                      const SizedBox(height: 10),
+                    if (active.isNotEmpty)
+                      _LiveParallelSendingPanel(
+                        activeCampaigns: active,
+                        onTapCampaign: _showEmailDetails,
+                      ),
+                  ],
                 ),
               ),
-            ];
-          }(),
+            ),
 
           // ── Header hero card ──────────────────────────────────────────
           SliverToBoxAdapter(
@@ -664,16 +675,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                   _StatChip(
                     icon: Icons.schedule_rounded,
                     label: 'Scheduled',
-                    // Count everything that is not done (Success/Failed)
-                    // This includes PDF campaigns running over 40 days
-                    value: '${_history.where((e) => e.status != 'Success' && !e.status.startsWith('Failed')).length}',
+                    value: '$scheduledCount',
                     color: AppTheme.primaryBlue,
                   ),
                   const SizedBox(width: 12),
                   _StatChip(
                     icon: Icons.check_circle_rounded,
                     label: 'Sent',
-                    value: '${_history.where((e) => e.status == 'Success').length}',
+                    value: '$sentCount',
                     color: AppTheme.successGreen,
                   ),
                   const SizedBox(width: 12),
@@ -746,6 +755,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
         ],
       ),
+    ),
     );
   }
 }
@@ -1344,10 +1354,14 @@ class _ContactsDialog extends StatelessWidget {
     return Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        height: MediaQuery.of(context).size.height * 0.6,
-        child: Column(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 520,
+          maxHeight: MediaQuery.of(context).size.height * 0.65,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -1377,6 +1391,7 @@ class _ContactsDialog extends StatelessWidget {
                     ),
             ),
           ],
+        ),
         ),
       ),
     ).animate().scale(duration: 250.ms, curve: Curves.easeOutBack).fade();
@@ -1736,6 +1751,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   bool _isPdfEmailEditing = false;
   int _currentSenderUsage = 0;
   bool _dateQuotaFull = false;
+  Timer? _senderLookupDebounce;
 
   @override
   void initState() {
@@ -1781,9 +1797,19 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     setState(() => _suggestedSenders = s);
   }
 
-  void _onSenderChanged() async {
+  void _onSenderChanged() {
+    _senderLookupDebounce?.cancel();
     final email = _senderController.text.trim();
-    if (_isValidEmail(email)) {
+    if (!_isValidEmail(email)) {
+      if (mounted) {
+        setState(() {
+          _currentSenderUsage = 0;
+          _dateQuotaFull = false;
+        });
+      }
+      return;
+    }
+    _senderLookupDebounce = Timer(const Duration(milliseconds: 300), () async {
       int sentCount = 0;
       try {
         final limits = await BackendService.fetchDailyLimits();
@@ -1795,18 +1821,12 @@ class _ScheduleModalState extends State<_ScheduleModal> {
           _dateQuotaFull = sentCount >= 50;
         });
       }
-    } else {
-      if (mounted) {
-        setState(() {
-          _currentSenderUsage = 0;
-          _dateQuotaFull = false;
-        });
-      }
-    }
+    });
   }
 
   @override
   void dispose() {
+    _senderLookupDebounce?.cancel();
     _senderController.dispose();
     _scheduleNameController.dispose();
     for (var c in _emailControllers) c.dispose();
@@ -1822,6 +1842,13 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   Future<void> _authenticateWithGoogle(String currentEmail) async {
     if (!_isValidEmail(currentEmail)) {
       _showMsg('sender', 'Please enter a valid Sender Email first.');
+      return;
+    }
+    if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+      _showMsg(
+        'sender',
+        'Connect this Gmail sender once on Android, iOS, macOS, or Web — once linked, Windows manages schedules in the Cloud automatically.',
+      );
       return;
     }
     setState(() => _isAuthenticating = true);
@@ -2022,38 +2049,33 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     }
   }
 
-  // Returns the conflicting PDF schedule if a future date overlap is found
+  // Returns the conflicting PDF schedule in O(N) via interval overlap.
   Future<ScheduledEmail?> _checkPdfConflict(ScheduledEmail newPdf) async {
     final allEmails = await BackendService.fetchCampaigns();
     final startDate = DateHelpers.parseDmy(newPdf.scheduledDate);
     if (startDate == null) return null;
     final dailyLimit = newPdf.dailyLimit > 0 ? newPdf.dailyLimit : 40;
     final totalDays = (newPdf.recipients.length / dailyLimit).ceil();
+    if (totalDays <= 1) return null;
 
-    for (int d = 1; d < totalDays; d++) { // start at day 1 (day 0 already checked by quota badge)
-      final checkDate = startDate.add(Duration(days: d));
+    final newStart = DateTime(startDate.year, startDate.month, startDate.day + 1);
+    final newEnd = DateTime(startDate.year, startDate.month, startDate.day + totalDays - 1);
 
-      for (final e in allEmails) {
-        if (e.senderEmail != newPdf.senderEmail) continue;
-        if (e.status == 'Success' || e.status == 'Failed' || e.status == 'Paused') continue;
-        if (e.type != 'PDF' && e.type != 'Merged') continue;
-        if (e.id == newPdf.id) continue;
+    for (final e in allEmails) {
+      if (e.senderEmail != newPdf.senderEmail) continue;
+      if (e.status == 'Success' || e.status == 'Failed' || e.status == 'Paused') continue;
+      if (e.type != 'PDF' && e.type != 'Merged') continue;
+      if (e.id == newPdf.id) continue;
 
-        final eStart = DateHelpers.parseDmy(e.scheduledDate);
-        if (eStart == null) continue;
-        final eDailyLimit = e.dailyLimit > 0 ? e.dailyLimit : 40;
-        final eTotalDays = (e.recipients.length / eDailyLimit).ceil();
-        final eEnd = eStart.add(Duration(days: eTotalDays - 1));
+      final eStart = DateHelpers.parseDmy(e.scheduledDate);
+      if (eStart == null) continue;
+      final eDailyLimit = e.dailyLimit > 0 ? e.dailyLimit : 40;
+      final eTotalDays = (e.recipients.length / eDailyLimit).ceil();
+      final normStart = DateTime(eStart.year, eStart.month, eStart.day);
+      final normEnd = DateTime(eStart.year, eStart.month, eStart.day + eTotalDays - 1);
 
-        final normalizedCheck = DateTime(checkDate.year, checkDate.month, checkDate.day);
-        final normalizedStart = DateTime(eStart.year, eStart.month, eStart.day);
-        final normalizedEnd = DateTime(eEnd.year, eEnd.month, eEnd.day);
-
-        if ((normalizedCheck.isAfter(normalizedStart) || normalizedCheck.isAtSameMomentAs(normalizedStart)) &&
-            (normalizedCheck.isBefore(normalizedEnd) || normalizedCheck.isAtSameMomentAs(normalizedEnd))) {
-          // Found a conflicting existing PDF on a future date
-          return e;
-        }
+      if (!newStart.isAfter(normEnd) && !newEnd.isBefore(normStart)) {
+        return e;
       }
     }
     return null;
@@ -2285,7 +2307,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         child: Material(
                           color: Colors.transparent,
                           child: Container(
-                            width: MediaQuery.of(ctx2).size.width - 40,
+                            width: min(MediaQuery.of(ctx2).size.width - 40, 560),
                             constraints: const BoxConstraints(maxHeight: 220),
                             margin: const EdgeInsets.only(top: 4),
                             decoration: BoxDecoration(
@@ -3141,7 +3163,9 @@ class _ResendModalState extends State<_ResendModal> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return ResponsiveCenter(
+      maxWidth: 640,
+      child: Container(
       height: MediaQuery.of(context).size.height * 0.7,
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -3305,6 +3329,7 @@ class _ResendModalState extends State<_ResendModal> {
           ),
         ],
       ),
+    ),
     );
   }
 }

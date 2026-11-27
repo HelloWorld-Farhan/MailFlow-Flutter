@@ -140,7 +140,8 @@ class NotificationService {
 
   static bool get _isAndroid => !kIsWeb && Platform.isAndroid;
   static bool get _isWindows => !kIsWeb && Platform.isWindows;
-  static bool get _isSupported => _isAndroid || _isWindows;
+  static bool get _isApple => !kIsWeb && (Platform.isIOS || Platform.isMacOS);
+  static bool get _isSupported => _isAndroid || _isWindows || _isApple;
 
   static int _campaignNotifId(String campaignId) => 2000 + (campaignId.hashCode.abs() % 50000);
   static int _progressNotifId(String campaignId) => 55000 + (campaignId.hashCode.abs() % 50000);
@@ -151,6 +152,11 @@ class NotificationService {
     if (_isInitialized || !_isSupported) return;
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const darwinSettings = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestSoundPermission: true,
+      requestBadgePermission: true,
+    );
     const windowsSettings = WindowsInitializationSettings(
       appName: 'MailFlow',
       appUserModelId: 'com.mailflow.app',
@@ -158,6 +164,8 @@ class NotificationService {
     );
     const initSettings = InitializationSettings(
       android: androidSettings,
+      iOS: darwinSettings,
+      macOS: darwinSettings,
       windows: windowsSettings,
     );
 
@@ -266,6 +274,8 @@ class NotificationService {
         playSound: true,
         enableVibration: true,
       ),
+      iOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
+      macOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
       windows: WindowsNotificationDetails(
         audio: WindowsNotificationAudio.preset(sound: WindowsNotificationSound.mail),
         subtitle: email.senderEmail,
@@ -311,6 +321,8 @@ class NotificationService {
         maxProgress: total > 0 ? total : 1,
         progress: sent,
       ),
+      iOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
+      macOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
       windows: WindowsNotificationDetails(
         audio: WindowsNotificationAudio.silent(),
         subtitle: email.senderEmail,
@@ -358,6 +370,8 @@ class NotificationService {
         maxProgress: totalAll > 0 ? totalAll : 1,
         progress: totalSent,
       ),
+      iOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
+      macOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
       windows: WindowsNotificationDetails(
         audio: WindowsNotificationAudio.silent(),
         subtitle: '${active.length} active senders running simultaneously',
@@ -412,6 +426,8 @@ class NotificationService {
         playSound: true,
         enableVibration: true,
       ),
+      iOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
+      macOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
       windows: WindowsNotificationDetails(
         audio: WindowsNotificationAudio.preset(sound: WindowsNotificationSound.defaultSound),
         subtitle: email.senderEmail,
@@ -457,6 +473,8 @@ class NotificationService {
         playSound: true,
         enableVibration: true,
       ),
+      iOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
+      macOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
       windows: WindowsNotificationDetails(
         audio: WindowsNotificationAudio.preset(sound: WindowsNotificationSound.defaultSound),
       ),
