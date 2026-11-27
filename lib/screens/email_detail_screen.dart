@@ -3,9 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../models/scheduled_email.dart';
-import '../services/app_config.dart';
 import '../services/backend_service.dart';
-import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/date_helpers.dart';
 import '../widgets/glass_widgets.dart';
@@ -33,13 +31,8 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
         vsync: this, duration: const Duration(milliseconds: 300));
     _rotateCtrl.forward();
     _loadGroups();
-    if (AppConfig.isBackendEnabled) {
-      _realtimeSub = BackendService.onDataChanged.listen((_) => _loadGroups(silent: true));
-      _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) => _loadGroups(silent: true));
-    } else {
-      _realtimeSub = StorageService.onDataChanged.listen((_) => _loadGroups(silent: true));
-      _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) => _loadGroups(silent: true));
-    }
+    _realtimeSub = BackendService.onDataChanged.listen((_) => _loadGroups(silent: true));
+    _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) => _loadGroups(silent: true));
     _scheduleMidnightRefresh();
   }
 
@@ -64,9 +57,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
 
   Future<void> _loadGroups({bool silent = false}) async {
     try {
-      final allEmails = AppConfig.isBackendEnabled
-          ? await BackendService.fetchCampaigns()
-          : await StorageService.getEmails();
+      final allEmails = await BackendService.fetchCampaigns();
       if (!mounted) return;
       setState(() {
         // Filter out successfully sent emails from showing up in the group list
@@ -79,11 +70,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
   }
 
   Future<void> _deleteGroup(String id) async {
-    if (AppConfig.isBackendEnabled) {
-      await BackendService.deleteCampaign(id);
-    } else {
-      await StorageService.deleteEmail(id);
-    }
+    await BackendService.deleteCampaign(id);
     _loadGroups();
   }
 

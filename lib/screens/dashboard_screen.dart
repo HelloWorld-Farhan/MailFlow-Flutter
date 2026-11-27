@@ -21,7 +21,6 @@ import 'settings_screen.dart';
 import 'email_detail_screen.dart';
 import 'email_limit_screen.dart';
 import '../models/template_item.dart';
-import '../services/dispatcher.dart';
 import '../widgets/glass_widgets.dart';
 import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
@@ -47,7 +46,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   Timer? _refreshTimer;
   Timer? _alertDismissTimer;
   StreamSubscription<void>? _realtimeSub;
-  StreamSubscription<void>? _storageSub;
   StreamSubscription<String>? _notifTapSub;
   final ValueNotifier<List<ScheduledEmail>> _historyNotifier =
       ValueNotifier<List<ScheduledEmail>>([]);
@@ -71,22 +69,16 @@ class _DashboardScreenState extends State<DashboardScreen>
     _checkPermissions();
     _loadHistory();
     _initVersionAndCheckUpdate();
-    if (AppConfig.isBackendEnabled) {
-      _realtimeSub = BackendService.onDataChanged.listen((_) => _loadHistory());
-      _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-        _loadHistory();
-      });
-    } else {
-      _storageSub = StorageService.onDataChanged.listen((_) => _loadHistory());
-      _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-        _loadHistory();
-      });
-    }
+    _realtimeSub = BackendService.onDataChanged.listen((_) => _loadHistory());
+    _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      _loadHistory();
+    });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      BackendService.verifyCloudConnection();
       _loadHistory();
       final last = _lastUpdateCheckAt;
       if (last == null || DateTime.now().difference(last) > const Duration(minutes: 15)) {
@@ -159,7 +151,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _realtimeSub?.cancel();
-    _storageSub?.cancel();
     _notifTapSub?.cancel();
     _refreshTimer?.cancel();
     _alertDismissTimer?.cancel();
@@ -211,28 +202,16 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _loadHistory() async {
-    if (AppConfig.isBackendEnabled) {
-      try {
-        final (history, limitsMap) = await (
-          BackendService.fetchCampaigns(),
-          BackendService.fetchDailyLimits(),
-        ).wait;
-        final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
-        await _applyLoadedHistory(history, totalSent);
-      } catch (_) {
-        if (mounted) setState(() => _isLoading = false);
-      }
-      return;
+    try {
+      final (history, limitsMap) = await (
+        BackendService.fetchCampaigns(),
+        BackendService.fetchDailyLimits(),
+      ).wait;
+      final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
+      await _applyLoadedHistory(history, totalSent);
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
     }
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    final (history, limitsMap) = await (
-      StorageService.getEmails(),
-      StorageService.getAllDailyLimits(),
-    ).wait;
-    final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
-    await _applyLoadedHistory(history, totalSent);
   }
 
   void _openScheduleModal({ScheduledEmail? existingEmail}) {
@@ -286,20 +265,12 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     if (confirm != true) return;
 
-    if (AppConfig.isBackendEnabled) {
-      await BackendService.deleteCampaign(id);
-    } else {
-      await StorageService.deleteEmail(id);
-    }
+    await BackendService.deleteCampaign(id);
     _loadHistory();
   }
 
   Future<void> _stopEmail(ScheduledEmail email) async {
-    if (AppConfig.isBackendEnabled) {
-      await BackendService.pauseCampaign(email.id);
-    } else {
-      await StorageService.updateEmail(email.copyWith(status: 'Paused'));
-    }
+    await BackendService.pauseCampaign(email.id);
     _loadHistory();
   }
 
@@ -334,23 +305,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
 
     NotificationService.clearCampaignAlertState(email.id);
-    if (AppConfig.isBackendEnabled) {
-      await BackendService.resumeCampaign(email.id, forceWeekend: forceWeekend);
-      _loadHistory();
-      return;
-    }
-
-    final sentCount = email.sentCount;
-    final total = email.recipients.length;
-    final batchSize = email.dailyLimit > 0 ? email.dailyLimit : 40;
-    String newStatus;
-    if (sentCount == 0) {
-      newStatus = 'Scheduled';
-    } else {
-      final daysDone = (sentCount / batchSize).ceil();
-      newStatus = 'Day $daysDone: $sentCount/$total sent';
-    }
-    await StorageService.updateEmail(email.copyWith(status: newStatus, forceWeekend: forceWeekend));
+    await BackendService.resumeCampaign(email.id, forceWeekend: forceWeekend);
     _loadHistory();
   }
 
@@ -583,6 +538,19 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
 
+          // ── Cloud Connection Pill ───────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: _CloudStatusBanner(
+                onReconnect: () async {
+                  await BackendService.verifyCloudConnection();
+                  await _loadHistory();
+                },
+              ),
+            ),
+          ),
+
           // ── In-App Live Sending / Parallel Activity Notification Hub ─────
           ...() {
             final active = _history
@@ -785,6 +753,75 @@ class _DashboardScreenState extends State<DashboardScreen>
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  HELPER WIDGETS
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+class _CloudStatusBanner extends StatelessWidget {
+  final Future<void> Function() onReconnect;
+  const _CloudStatusBanner({required this.onReconnect});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<CloudStatus>(
+      valueListenable: BackendService.cloudStatus,
+      builder: (context, status, _) {
+        final bool isConnected = status == CloudStatus.connected;
+        final bool isConnecting = status == CloudStatus.connecting;
+        final Color clr = isConnected
+            ? AppTheme.successGreen
+            : (isConnecting ? AppTheme.warningAmber : AppTheme.errorRed);
+        final String label = isConnected
+            ? 'Cloud Connected  •  24/7 Realtime Active'
+            : (isConnecting ? 'Connecting to Cloud...' : 'Cloud Offline  •  Tap to Retry');
+
+        return GlassContainer(
+          borderRadius: 14,
+          blurSigma: 12,
+          color: clr.withValues(alpha: 0.08),
+          borderColor: clr.withValues(alpha: 0.28),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: isConnecting ? null : onReconnect,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(color: clr, shape: BoxShape.circle),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: clr,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      isConnected
+                          ? Icons.cloud_done_rounded
+                          : (isConnecting ? Icons.cloud_sync_rounded : Icons.refresh_rounded),
+                      size: 16,
+                      color: clr,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ).animate().fade(duration: 280.ms).blur(begin: const Offset(4, 4), end: Offset.zero, duration: 280.ms);
+      },
+    );
+  }
+}
+
 class _RealtimeEventBanner extends StatelessWidget {
   final CampaignNotificationEvent event;
   final VoidCallback onTap;
@@ -1748,14 +1785,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     final email = _senderController.text.trim();
     if (_isValidEmail(email)) {
       int sentCount = 0;
-      if (AppConfig.isBackendEnabled) {
-        try {
-          final limits = await BackendService.fetchDailyLimits();
-          sentCount = limits[email] ?? 0;
-        } catch (_) {}
-      } else {
-        sentCount = await StorageService.getDailySentCount(email);
-      }
+      try {
+        final limits = await BackendService.fetchDailyLimits();
+        sentCount = limits[email] ?? 0;
+      } catch (_) {}
       if (mounted) {
         setState(() {
           _currentSenderUsage = sentCount;
@@ -1797,20 +1830,13 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       await _googleSignIn.signOut();
       final account = await _googleSignIn.signIn();
       if (account != null) {
-        // Save the access token locally for fallback mode
-        final auth = await account.authentication;
-        if (auth.accessToken != null) {
-          await StorageService.saveAccessToken(account.email, auth.accessToken!);
+        final authCode = account.serverAuthCode;
+        if (authCode == null || authCode.isEmpty) {
+          if (mounted) setState(() => _isAuthenticating = false);
+          _showMsg('sender', 'Missing Google offline auth code. Please retry Google Sign-In.');
+          return;
         }
-        if (AppConfig.isBackendEnabled) {
-          final authCode = account.serverAuthCode;
-          if (authCode == null || authCode.isEmpty) {
-            if (mounted) setState(() => _isAuthenticating = false);
-            _showMsg('sender', 'Missing Google offline auth code. Check Google Web Client ID in Settings > Backend.');
-            return;
-          }
-          await BackendService.exchangeServerAuthCode(authCode);
-        }
+        await BackendService.exchangeServerAuthCode(authCode);
         if (mounted) {
           setState(() {
             _isAuthenticated = true;
@@ -1819,9 +1845,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
           });
         }
         await StorageService.saveSenderEmail(account.email);
-        // Register with dispatcher cache
-        BackgroundDispatcher.registerSignedInAccount(account);
-        _showMsg('sender', 'Authenticated as ${account.email}!', isError: false);
+        _showMsg('sender', 'Cloud connected as ${account.email}!', isError: false);
       } else {
         if (mounted) setState(() => _isAuthenticating = false);
       }
@@ -1987,32 +2011,20 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       }
     }
 
-    if (AppConfig.isBackendEnabled) {
-      try {
-        if (widget.editEmail != null) {
-          await BackendService.deleteCampaign(widget.editEmail!.id);
-        }
-        await BackendService.createCampaign(newEmail);
-        if (mounted) Navigator.pop(context);
-      } catch (e) {
-        _showMsg('date', 'Backend error: $e');
+    try {
+      if (widget.editEmail != null) {
+        await BackendService.deleteCampaign(widget.editEmail!.id);
       }
-      return;
+      await BackendService.createCampaign(newEmail);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      _showMsg('date', 'Backend error: $e');
     }
-
-    if (widget.editEmail != null) {
-      await StorageService.updateEmail(newEmail);
-    } else {
-      await StorageService.saveEmail(newEmail);
-    }
-    if (mounted) Navigator.pop(context);
   }
 
   // Returns the conflicting PDF schedule if a future date overlap is found
   Future<ScheduledEmail?> _checkPdfConflict(ScheduledEmail newPdf) async {
-    final allEmails = AppConfig.isBackendEnabled
-        ? await BackendService.fetchCampaigns()
-        : await StorageService.getEmails();
+    final allEmails = await BackendService.fetchCampaigns();
     final startDate = DateHelpers.parseDmy(newPdf.scheduledDate);
     if (startDate == null) return null;
     final dailyLimit = newPdf.dailyLimit > 0 ? newPdf.dailyLimit : 40;
@@ -2112,13 +2124,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
               subtitle: '"$newName" will start on $queueDateStr\nafter "$conflictName" finishes.',
               onTap: () async {
                 Navigator.pop(ctx);
-                // Save new PDF with queuedAfter set to conflicting PDF's ID
                 final queued = newPdf.copyWith(queuedAfter: conflictingPdf.id, scheduledDate: queueDateStr);
-                if (AppConfig.isBackendEnabled) {
-                  await BackendService.createCampaign(queued);
-                } else {
-                  await StorageService.saveEmail(queued);
-                }
+                await BackendService.createCampaign(queued);
                 if (mounted) Navigator.pop(context);
               },
             ),
@@ -2188,17 +2195,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       mergeSourceNames: {existingPdf.id: existingName, newPdf.id: newName},
     );
 
-    if (AppConfig.isBackendEnabled) {
-      await BackendService.deleteCampaign(existingPdf.id);
-      await BackendService.createCampaign(merged);
-      return;
-    }
-
-    // Delete BOTH original PDFs — only the merged campaign should remain
-    await StorageService.deleteEmail(existingPdf.id);
-    await StorageService.deleteEmail(newPdf.id);
-    // Save merged schedule
-    await StorageService.saveEmail(merged);
+    await BackendService.deleteCampaign(existingPdf.id);
+    await BackendService.createCampaign(merged);
   }
 
   @override
@@ -3132,19 +3130,13 @@ class _ResendModalState extends State<_ResendModal> {
       clearQueuedAfter: true,
     );
     
-    if (AppConfig.isBackendEnabled) {
-      try {
-        await BackendService.deleteCampaign(widget.email.id);
-        await BackendService.createCampaign(newEmail);
-        if (mounted) Navigator.pop(context);
-      } catch (e) {
-        _showMsg('Backend error: $e');
-      }
-      return;
+    try {
+      await BackendService.deleteCampaign(widget.email.id);
+      await BackendService.createCampaign(newEmail);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      _showMsg('Backend error: $e');
     }
-
-    await StorageService.updateEmail(newEmail); // Overwrite the old one!
-    if (mounted) Navigator.pop(context);
   }
 
   @override

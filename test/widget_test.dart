@@ -1,8 +1,6 @@
-import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mailflow/models/scheduled_email.dart';
 import 'package:mailflow/services/app_config.dart';
 import 'package:mailflow/services/backend_service.dart';
@@ -41,24 +39,32 @@ void main() {
     expect(release.apkSize, 25000000);
     expect(release.windowsDownloadUrl, endsWith('.exe'));
     expect(release.windowsSize, 18500000);
-    if (Platform.isWindows) {
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
       expect(release.platformDownloadUrl, release.windowsDownloadUrl);
       expect(release.platformAssetSize, 18500000);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      expect(release.platformDownloadUrl, release.apkDownloadUrl);
+      expect(release.platformAssetSize, 25000000);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
     }
   });
 
-  test('AppConfig stores dynamic URLs without trailing slashes', () async {
-    SharedPreferences.setMockInitialValues({});
-    await AppConfig.saveOverrides(
-      supabaseUrlValue: 'https://demo.supabase.co/',
-      supabaseAnonKeyValue: 'anon-key',
-      backendApiUrlValue: 'https://worker.test/',
-      backendApiSecretValue: 'secret-key',
-      googleWebClientIdValue: 'web-client-id',
-    );
+  test('AppConfig has built-in cloud URLs and client config enabled by default', () async {
+    await AppConfig.load();
     expect(AppConfig.isBackendEnabled, isTrue);
-    expect(AppConfig.supabaseUrl, 'https://demo.supabase.co');
-    expect(AppConfig.backendApiUrl, 'https://worker.test');
+    expect(AppConfig.supabaseUrl, startsWith('https://'));
+    expect(AppConfig.backendApiUrl, startsWith('https://'));
+    expect(AppConfig.backendApiSecret, isNotEmpty);
+    expect(AppConfig.googleWebClientId, isNotEmpty);
+    expect(BackendService.cloudStatus.value, isA<CloudStatus>());
   });
 
   test('BackendService parses DD/MM/YYYY and 12-hour time accurately', () {
@@ -165,33 +171,38 @@ void main() {
 
   testWidgets('UpdateDialog shows compact update popup immediately with preset result',
       (WidgetTester tester) async {
-    expect(UpdateService.isNewerVersion('1.0.3', '1.0.2'), isTrue);
-    expect(UpdateService.isNewerVersion('1.0.2', '1.0.2'), isFalse);
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      expect(UpdateService.isNewerVersion('1.0.3', '1.0.2'), isTrue);
+      expect(UpdateService.isNewerVersion('1.0.2', '1.0.2'), isFalse);
 
-    final preset = UpdateCheckResult(
-      hasUpdate: true,
-      currentVersion: '1.0.2',
-      latestRelease: ReleaseInfo(
-        tagName: 'v1.0.3',
-        version: '1.0.3',
-        name: 'MailFlow v1.0.3',
-        body: 'Faster sending + live blur updates',
-        apkDownloadUrl: 'https://example.com/MailFlow-Android.apk',
-        windowsDownloadUrl: 'https://example.com/MailFlow-Windows-Setup.exe',
-      ),
-    );
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: UpdateDialog(initialResult: preset),
+      final preset = UpdateCheckResult(
+        hasUpdate: true,
+        currentVersion: '1.0.2',
+        latestRelease: ReleaseInfo(
+          tagName: 'v1.0.3',
+          version: '1.0.3',
+          name: 'MailFlow v1.0.3',
+          body: 'Faster sending + live blur updates',
+          apkDownloadUrl: 'https://example.com/MailFlow-Android.apk',
+          windowsDownloadUrl: 'https://example.com/MailFlow-Windows-Setup.exe',
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
 
-    expect(find.text('New Version Available: v1.0.3'), findsOneWidget);
-    expect(find.text('Download & Install'), findsOneWidget);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: UpdateDialog(initialResult: preset),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('New Version Available: v1.0.3'), findsOneWidget);
+      expect(find.text('Download & Install'), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('AppTheme light theme initializes properly', (WidgetTester tester) async {

@@ -32,15 +32,15 @@ class ReleaseInfo {
 
   String? get platformDownloadUrl {
     if (kIsWeb) return null;
-    if (Platform.isWindows) return windowsDownloadUrl;
-    if (Platform.isAndroid) return apkDownloadUrl;
+    if (defaultTargetPlatform == TargetPlatform.windows) return windowsDownloadUrl;
+    if (defaultTargetPlatform == TargetPlatform.android) return apkDownloadUrl;
     return null;
   }
 
   int get platformAssetSize {
     if (kIsWeb) return 0;
-    if (Platform.isWindows) return windowsSize;
-    if (Platform.isAndroid) return apkSize;
+    if (defaultTargetPlatform == TargetPlatform.windows) return windowsSize;
+    if (defaultTargetPlatform == TargetPlatform.android) return apkSize;
     return 0;
   }
 

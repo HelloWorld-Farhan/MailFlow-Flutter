@@ -4,7 +4,6 @@ import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 import 'services/app_config.dart';
 import 'services/backend_service.dart';
-import 'services/dispatcher.dart';
 import 'services/notification_service.dart';
 
 void main() async {
@@ -15,11 +14,7 @@ void main() async {
   ));
   await AppConfig.load();
   await NotificationService.initialize();
-  if (AppConfig.isBackendEnabled) {
-    await BackendService.startRealtime();
-  } else {
-    await BackgroundDispatcher.start();
-  }
+  await BackendService.startRealtime();
   runApp(const MailFlowApp());
 }
 

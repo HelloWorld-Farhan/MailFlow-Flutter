@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import '../services/app_config.dart';
 import '../services/backend_service.dart';
-import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_widgets.dart';
 
@@ -31,15 +29,8 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
       duration: const Duration(milliseconds: 700),
     );
     _loadLimits();
-    if (AppConfig.isBackendEnabled) {
-      _realtimeSub = BackendService.onDataChanged.listen((_) => _loadLimits(silent: true));
-      _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) => _loadLimits(silent: true));
-    } else {
-      _realtimeSub = StorageService.onDataChanged.listen((_) => _loadLimits(silent: true));
-      _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-        _loadLimits(silent: true);
-      });
-    }
+    _realtimeSub = BackendService.onDataChanged.listen((_) => _loadLimits(silent: true));
+    _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) => _loadLimits(silent: true));
     // Schedule a one-shot timer to fire just after midnight to reset the display
     _scheduleMidnightReset();
   }
@@ -69,9 +60,7 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
     if (!silent && mounted) setState(() => _isLoading = true);
 
     try {
-      final limits = AppConfig.isBackendEnabled
-          ? await BackendService.fetchDailyLimits()
-          : await StorageService.getAllDailyLimits();
+      final limits = await BackendService.fetchDailyLimits();
 
       if (mounted) {
         setState(() {

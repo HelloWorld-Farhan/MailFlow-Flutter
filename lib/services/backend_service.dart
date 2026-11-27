@@ -7,9 +7,14 @@ import '../models/scheduled_email.dart';
 import '../utils/date_helpers.dart';
 import 'app_config.dart';
 
+enum CloudStatus { connecting, connected, offline }
+
 /// Client for MailFlow Cloudflare Worker API, Supabase REST, and Supabase Realtime.
 class BackendService {
   static final http.Client _client = http.Client();
+  static final ValueNotifier<CloudStatus> cloudStatus =
+      ValueNotifier<CloudStatus>(CloudStatus.connecting);
+  static String? lastCloudError;
   static final StreamController<void> _changesController =
       StreamController<void>.broadcast();
   static Stream<void> get onDataChanged => _changesController.stream;
@@ -70,17 +75,37 @@ class BackendService {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
-  /// Verifies the deployed Worker `/health` endpoint.
+  /// Verifies the deployed Worker `/health` endpoint and updates [cloudStatus].
   static Future<Map<String, dynamic>> checkHealth() async {
-    if (!AppConfig.isBackendEnabled) {
-      throw Exception('Backend URL or secrets are not configured.');
+    try {
+      final data = await _sendWorkerRequest(
+        'GET',
+        '/health',
+        timeout: const Duration(seconds: 12),
+        errorLabel: 'Health check failed',
+      );
+      lastCloudError = null;
+      cloudStatus.value = CloudStatus.connected;
+      return data;
+    } catch (e) {
+      lastCloudError = e.toString().replaceFirst('Exception: ', '');
+      cloudStatus.value = CloudStatus.offline;
+      rethrow;
     }
-    return _sendWorkerRequest(
-      'GET',
-      '/health',
-      timeout: const Duration(seconds: 12),
-      errorLabel: 'Health check failed',
-    );
+  }
+
+  /// Checks Worker health and ensures Realtime socket is connected.
+  static Future<bool> verifyCloudConnection() async {
+    cloudStatus.value = CloudStatus.connecting;
+    try {
+      await checkHealth();
+      if (_socket == null) {
+        await _connectSocket();
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Sends Google `serverAuthCode` to Worker `/oauth/exchange` to store an encrypted refresh token.
@@ -289,9 +314,12 @@ class BackendService {
 
   /// Opens a Supabase Realtime WebSocket subscription for live UI updates.
   static Future<void> startRealtime() async {
-    if (kIsWeb || !AppConfig.isBackendEnabled) return;
     _realtimeWanted = true;
-    await _connectSocket();
+    cloudStatus.value = CloudStatus.connecting;
+    unawaited(verifyCloudConnection());
+    if (!kIsWeb) {
+      await _connectSocket();
+    }
   }
 
   static Future<void> stopRealtime() async {
@@ -304,7 +332,7 @@ class BackendService {
   }
 
   static Future<void> _connectSocket() async {
-    if (!_realtimeWanted || !AppConfig.isBackendEnabled) return;
+    if (!_realtimeWanted || kIsWeb) return;
     _heartbeatTimer?.cancel();
     _reconnectTimer?.cancel();
 
@@ -350,7 +378,12 @@ class BackendService {
         (raw) {
           try {
             final msg = jsonDecode(raw.toString()) as Map<String, dynamic>;
-            if (msg['event'] == 'postgres_changes') {
+            final event = msg['event'];
+            if (event == 'phx_reply' && msg['payload']?['status'] == 'ok') {
+              lastCloudError = null;
+              cloudStatus.value = CloudStatus.connected;
+            } else if (event == 'postgres_changes') {
+              cloudStatus.value = CloudStatus.connected;
               _realtimeDebounce?.cancel();
               _realtimeDebounce = Timer(const Duration(milliseconds: 120), () {
                 _changesController.add(null);
@@ -370,6 +403,9 @@ class BackendService {
   static void _scheduleReconnect() {
     _heartbeatTimer?.cancel();
     if (!_realtimeWanted) return;
+    if (cloudStatus.value != CloudStatus.offline) {
+      cloudStatus.value = CloudStatus.connecting;
+    }
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 5), () {
       _connectSocket();
