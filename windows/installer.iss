@@ -21,6 +21,8 @@ OutputBaseFilename=MailFlow-Windows-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+CloseApplications=yes
+RestartApplications=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -37,4 +39,9 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; Only remove saved local preferences when user explicitly uninstalls (never on update)
+Type: filesandordirs; Name: "{userappdata}\com.helloworld\MailFlow"
+Type: filesandordirs; Name: "{userappdata}\com.helloworld\mailflow"
 

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class ReleaseInfo {
   final String tagName;
@@ -115,6 +116,7 @@ class UpdateService {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
           'User-Agent': 'MailFlow-Updater',
+          'Cache-Control': 'no-cache',
         },
       ).timeout(const Duration(seconds: 15));
 
@@ -122,7 +124,7 @@ class UpdateService {
         final data = jsonDecode(response.body);
         final release = ReleaseInfo.fromJson(data);
 
-        final hasUpdate = _isNewerVersion(release.version, currentVersion);
+        final hasUpdate = isNewerVersion(release.version, currentVersion);
         return UpdateCheckResult(
           hasUpdate: hasUpdate,
           currentVersion: currentVersion,
@@ -150,8 +152,8 @@ class UpdateService {
     }
   }
 
-  /// Compares semantic versions (e.g. '1.0.1' > '1.0.0')
-  static bool _isNewerVersion(String latest, String current) {
+  /// Compares semantic versions (e.g. '1.0.1' > '1.0.0').
+  static bool isNewerVersion(String latest, String current) {
     try {
       final cleanLatest = latest.split('+').first.trim();
       final cleanCurrent = current.split('+').first.trim();
@@ -169,6 +171,16 @@ class UpdateService {
     } catch (_) {
       return latest != current;
     }
+  }
+
+  /// Ensures Android "Install unknown apps" permission is granted before opening APK updates.
+  /// In-place APK updates keep all SharedPreferences/user data intact unless uninstalled.
+  static Future<bool> ensureInstallPermission() async {
+    if (kIsWeb || !Platform.isAndroid) return true;
+    final status = await Permission.requestInstallPackages.status;
+    if (status.isGranted) return true;
+    final requested = await Permission.requestInstallPackages.request();
+    return requested.isGranted;
   }
 
   /// Downloads the platform installer (APK/EXE) with real-time progress and launches it
@@ -213,7 +225,14 @@ class UpdateService {
       await sink.flush();
       await sink.close();
 
-      // Launch installer
+      if (!isWindows && Platform.isAndroid) {
+        final allowed = await ensureInstallPermission();
+        if (!allowed) {
+          throw Exception('Please allow "Install unknown apps" for MailFlow in Android Settings and tap Retry.');
+        }
+      }
+
+      // Launch installer (preserves existing app data across upgrades)
       final result = await OpenFilex.open(
         saveFile.path,
         type: isWindows ? null : 'application/vnd.android.package-archive',

@@ -8,6 +8,8 @@ import 'package:mailflow/services/app_config.dart';
 import 'package:mailflow/services/backend_service.dart';
 import 'package:mailflow/services/notification_service.dart';
 import 'package:mailflow/theme/app_theme.dart';
+import 'package:mailflow/widgets/glass_widgets.dart';
+import 'package:mailflow/widgets/update_dialog.dart';
 import 'package:mailflow/services/update_service.dart';
 import 'package:mailflow/utils/date_helpers.dart';
 import 'package:mailflow/utils/pdf_parser.dart';
@@ -135,6 +137,61 @@ void main() {
     ]);
     expect(finish.map((e) => e.kind), [CampaignEventKind.completed, CampaignEventKind.failed]);
     expect(finish.first.activeParallelCount, 0);
+  });
+
+  testWidgets('GlassContainer and BlurredPageRoute render cleanly', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => GlassContainer(
+              child: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  BlurredPageRoute(builder: (_) => const Scaffold(body: Text('GlassPage'))),
+                ),
+                child: const Text('Open Glass'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Open Glass'), findsOneWidget);
+    await tester.tap(find.text('Open Glass'));
+    await tester.pumpAndSettle();
+    expect(find.text('GlassPage'), findsOneWidget);
+  });
+
+  testWidgets('UpdateDialog shows compact update popup immediately with preset result',
+      (WidgetTester tester) async {
+    expect(UpdateService.isNewerVersion('1.0.3', '1.0.2'), isTrue);
+    expect(UpdateService.isNewerVersion('1.0.2', '1.0.2'), isFalse);
+
+    final preset = UpdateCheckResult(
+      hasUpdate: true,
+      currentVersion: '1.0.2',
+      latestRelease: ReleaseInfo(
+        tagName: 'v1.0.3',
+        version: '1.0.3',
+        name: 'MailFlow v1.0.3',
+        body: 'Faster sending + live blur updates',
+        apkDownloadUrl: 'https://example.com/MailFlow-Android.apk',
+        windowsDownloadUrl: 'https://example.com/MailFlow-Windows-Setup.exe',
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UpdateDialog(initialResult: preset),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('New Version Available: v1.0.3'), findsOneWidget);
+    expect(find.text('Download & Install'), findsOneWidget);
   });
 
   testWidgets('AppTheme light theme initializes properly', (WidgetTester tester) async {

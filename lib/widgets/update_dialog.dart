@@ -5,23 +5,40 @@ import '../services/update_service.dart';
 import '../theme/app_theme.dart';
 
 class UpdateDialog extends StatefulWidget {
-  const UpdateDialog({super.key});
+  final UpdateCheckResult? initialResult;
+  const UpdateDialog({super.key, this.initialResult});
 
-  static Future<void> show(BuildContext context) {
+  static Future<void> show(BuildContext context, {UpdateCheckResult? initialResult}) {
     return showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'UpdateDialog',
-      barrierColor: Colors.black.withOpacity(0.4),
+      barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (context, anim1, anim2) {
-        return const UpdateDialog();
+        return UpdateDialog(initialResult: initialResult);
       },
       transitionBuilder: (context, anim1, anim2, child) {
         final curved = CurvedAnimation(parent: anim1, curve: Curves.easeOutBack);
-        return ScaleTransition(
-          scale: curved,
-          child: FadeTransition(opacity: anim1, child: child),
+        final blur = (anim1.value * 10.0).clamp(0.0, 10.0);
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).maybePop(),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.28 * anim1.value),
+                  ),
+                ),
+              ),
+            ),
+            ScaleTransition(
+              scale: Tween<double>(begin: 0.90, end: 1.0).animate(curved),
+              child: FadeTransition(opacity: anim1, child: child),
+            ),
+          ],
         );
       },
     );
@@ -44,7 +61,13 @@ class _UpdateDialogState extends State<UpdateDialog> {
   @override
   void initState() {
     super.initState();
-    _runCheck();
+    final preset = widget.initialResult;
+    if (preset != null && preset.latestRelease != null) {
+      _checkResult = preset;
+      _state = preset.hasUpdate ? _UpdateState.available : _UpdateState.upToDate;
+    } else {
+      _runCheck();
+    }
   }
 
   Future<void> _runCheck() async {
@@ -85,6 +108,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
     });
 
     try {
+      await UpdateService.ensureInstallPermission();
       await UpdateService.downloadAndInstall(
         downloadUrl: downloadUrl,
         onProgress: (progress, received, total) {
@@ -125,24 +149,24 @@ class _UpdateDialogState extends State<UpdateDialog> {
       filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
       child: Center(
         child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
-          constraints: const BoxConstraints(maxWidth: 420, maxHeight: 600),
+          width: MediaQuery.of(context).size.width * 0.88,
+          constraints: const BoxConstraints(maxWidth: 368, maxHeight: 490),
           margin: const EdgeInsets.symmetric(horizontal: 20),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.95),
+            color: Colors.white.withValues(alpha: 0.86),
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: AppTheme.primaryBlue.withOpacity(0.18),
+              color: AppTheme.primaryBlue.withValues(alpha: 0.22),
               width: 1.5,
             ),
             boxShadow: [
               BoxShadow(
-                color: AppTheme.primaryBlue.withOpacity(0.12),
+                color: AppTheme.primaryBlue.withValues(alpha: 0.14),
                 blurRadius: 36,
                 offset: const Offset(0, 12),
               ),
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -171,7 +195,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
             ),
           ),
         ),
-      ),
+      ).animate().blur(begin: const Offset(8, 8), end: Offset.zero, duration: 280.ms),
     );
   }
 

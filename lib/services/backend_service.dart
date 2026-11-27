@@ -165,7 +165,8 @@ class BackendService {
       '?select=id,schedule_name,sender_email,type,subject,body,daily_limit,delay_minutes,'
       'total_count,sent_count,failed_count,status,force_weekend,queued_after,'
       'pdf_name,scheduled_date,scheduled_time,merge_meta,created_at,'
-      'email_jobs(recipient_email,status,error_message)'
+      'email_jobs(recipient_email,status,error_message,send_at)'
+      '&email_jobs.order=send_at.asc'
       '&order=created_at.desc',
     );
     final res = await _client.get(uri, headers: _supabaseHeaders).timeout(const Duration(seconds: 15));
@@ -322,6 +323,7 @@ class BackendService {
         'topic': 'realtime:mailflow',
         'event': 'phx_join',
         'payload': {
+          'access_token': AppConfig.supabaseAnonKey,
           'config': {
             'postgres_changes': [
               {'event': '*', 'schema': 'public', 'table': 'campaigns'},

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,7 @@ import 'email_detail_screen.dart';
 import 'email_limit_screen.dart';
 import '../models/template_item.dart';
 import '../services/dispatcher.dart';
+import '../widgets/glass_widgets.dart';
 import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
 import '../services/notification_service.dart';
@@ -36,7 +38,8 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver {
   List<ScheduledEmail> _history = [];
   bool _isLoading = true;
   int _totalDailySent = 0;
@@ -45,6 +48,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _alertDismissTimer;
   StreamSubscription<void>? _realtimeSub;
   StreamSubscription<void>? _storageSub;
+  StreamSubscription<String>? _notifTapSub;
+  final ValueNotifier<List<ScheduledEmail>> _historyNotifier =
+      ValueNotifier<List<ScheduledEmail>>([]);
+  String? _pendingLaunchCampaignId;
+  String? _openDetailsCampaignId;
+  bool _updateDialogOpen = false;
+  DateTime? _lastUpdateCheckAt;
+  UpdateCheckResult? _latestUpdateResult;
   CampaignNotificationEvent? _latestAlert;
   String _currentVersion = '1.0.0';
   bool _hasUpdate = false;
@@ -54,6 +65,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _pendingLaunchCampaignId = NotificationService.consumeInitialCampaignId();
+    _notifTapSub = NotificationService.onNotificationTap.listen(_openCampaignById);
     _checkPermissions();
     _loadHistory();
     _initVersionAndCheckUpdate();
@@ -70,7 +84,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadHistory();
+      final last = _lastUpdateCheckAt;
+      if (last == null || DateTime.now().difference(last) > const Duration(minutes: 15)) {
+        _initVersionAndCheckUpdate();
+      }
+    }
+  }
+
   Future<void> _initVersionAndCheckUpdate() async {
+    _lastUpdateCheckAt = DateTime.now();
     try {
       final info = await PackageInfo.fromPlatform();
       if (mounted) setState(() => _currentVersion = info.version);
@@ -78,16 +104,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final result = await UpdateService.checkForUpdates();
     if (!mounted) return;
+    _latestUpdateResult = result;
     if (result.hasUpdate && result.latestRelease != null) {
+      final ver = result.latestRelease!.version;
       setState(() {
         _hasUpdate = true;
-        _latestVersion = result.latestRelease!.version;
+        _latestVersion = ver;
       });
       // Trigger status bar notification with default sound & vibration
       NotificationService.showUpdateNotification(
-        newVersion: _latestVersion!,
-        body: 'MailFlow v$_latestVersion is now ready. Tap to install.',
+        newVersion: ver,
+        body: 'MailFlow v$ver is now ready. Tap to download & install.',
       );
+
+      final prefs = await SharedPreferences.getInstance();
+      final dismissedVer = prefs.getString('dismissed_update_version');
+      if (mounted && dismissedVer != ver && !_updateDialogOpen) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showUpdatePopup(result: result, markDismissedOnClose: true);
+        });
+      }
+    }
+  }
+
+  Future<void> _showUpdatePopup({
+    UpdateCheckResult? result,
+    bool markDismissedOnClose = false,
+  }) async {
+    if (_updateDialogOpen || !mounted) return;
+    _updateDialogOpen = true;
+    try {
+      await UpdateDialog.show(context, initialResult: result ?? _latestUpdateResult);
+      final ver = (result ?? _latestUpdateResult)?.latestRelease?.version;
+      if (markDismissedOnClose && ver != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('dismissed_update_version', ver);
+      }
+    } finally {
+      _updateDialogOpen = false;
     }
   }
 
@@ -103,14 +157,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _realtimeSub?.cancel();
     _storageSub?.cancel();
+    _notifTapSub?.cancel();
     _refreshTimer?.cancel();
     _alertDismissTimer?.cancel();
+    _historyNotifier.dispose();
     super.dispose();
   }
 
+  void _openCampaignById(String campaignId) async {
+    if (!mounted) return;
+    if (campaignId == NotificationService.updatePayload) {
+      await _showUpdatePopup();
+      return;
+    }
+    if (_openDetailsCampaignId == campaignId) return;
+    var match = _history.where((e) => e.id == campaignId).firstOrNull;
+    if (match == null) {
+      await _loadHistory();
+      if (!mounted) return;
+      match = _history.where((e) => e.id == campaignId).firstOrNull;
+    }
+    if (match != null) {
+      _showEmailDetails(match);
+    }
+  }
+
   Future<void> _applyLoadedHistory(List<ScheduledEmail> history, int totalSent) async {
+    _historyNotifier.value = history;
     final events = await NotificationService.handleSnapshot(history);
     if (!mounted) return;
     setState(() {
@@ -126,6 +202,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _alertDismissTimer = Timer(const Duration(seconds: 6), () {
         if (mounted) setState(() => _latestAlert = null);
       });
+    }
+    if (_pendingLaunchCampaignId != null) {
+      final targetId = _pendingLaunchCampaignId!;
+      _pendingLaunchCampaignId = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openCampaignById(targetId));
     }
   }
 
@@ -159,8 +240,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.28),
       useSafeArea: true,
-      builder: (context) => _ScheduleModal(editEmail: existingEmail),
+      builder: (context) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: _ScheduleModal(editEmail: existingEmail),
+      ),
     ).then((_) => _loadHistory());
   }
 
@@ -170,12 +255,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _ResendModal(email: email),
+      barrierColor: Colors.black.withValues(alpha: 0.28),
+      builder: (context) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: _ResendModal(email: email),
+      ),
     ).then((_) => _loadHistory());
   }
 
   Future<void> _deleteEmail(String id) async {
-    final bool? confirm = await showDialog<bool>(
+    final bool? confirm = await showBlurredDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirm Deletion', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
@@ -220,7 +309,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     bool forceWeekend = false;
 
     if (isWeekend) {
-      final confirm = await showDialog<bool>(
+      final confirm = await showBlurredDialog<bool>(
         context: context,
         builder: (c) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -268,17 +357,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showAllContacts() async {
     final contacts = await StorageService.getExtractedEmails();
     if (!mounted) return;
-    showDialog(
+    showBlurredDialog(
       context: context,
       builder: (context) => _ContactsDialog(contacts: contacts),
     );
   }
 
   void _showEmailDetails(ScheduledEmail email) {
-    showDialog(
+    _openDetailsCampaignId = email.id;
+    showBlurredDialog(
       context: context,
-      builder: (context) => _DetailsDialog(email: email, primaryColor: AppTheme.primaryBlue),
-    );
+      builder: (context) => _DetailsDialog(
+        email: email,
+        primaryColor: AppTheme.primaryBlue,
+        historyNotifier: _historyNotifier,
+      ),
+    ).then((_) {
+      if (_openDetailsCampaignId == email.id) {
+        _openDetailsCampaignId = null;
+      }
+    });
   }
 
   @override
@@ -288,10 +386,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // â”€â”€ App Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+          // ── App Bar ───────────────────────────────────────────────────────
           SliverAppBar(
             floating: true,
-            backgroundColor: AppTheme.bgWhite,
+            backgroundColor: Colors.transparent,
+            flexibleSpace: buildGlassAppBarBackground(),
             elevation: 0,
             surfaceTintColor: Colors.transparent,
             title: Row(
@@ -343,7 +442,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   IconButton(
                     icon: const Icon(Icons.system_update_alt_rounded, color: AppTheme.primaryBlue, size: 22),
                     tooltip: 'Check for Updates',
-                    onPressed: () => UpdateDialog.show(context),
+                    onPressed: () => _showUpdatePopup(),
                   ),
                   if (_hasUpdate)
                     Positioned(
@@ -363,12 +462,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               IconButton(
                 icon: const Icon(Icons.group_outlined, color: AppTheme.textMid, size: 22),
                 tooltip: 'Email Groups',
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmailDetailScreen())),
+                onPressed: () => Navigator.push(context, BlurredPageRoute(builder: (_) => const EmailDetailScreen())),
               ),
               IconButton(
                 icon: const Icon(Icons.data_usage_rounded, color: AppTheme.textMid, size: 22),
                 tooltip: 'Email Limits',
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmailLimitScreen())),
+                onPressed: () => Navigator.push(context, BlurredPageRoute(builder: (_) => const EmailLimitScreen())),
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert_rounded, color: AppTheme.textMid, size: 22),
@@ -376,7 +475,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 onSelected: (val) {
                   if (val == 'contacts') _showAllContacts();
-                  if (val == 'settings') Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                  if (val == 'settings') Navigator.push(context, BlurredPageRoute(builder: (_) => const SettingsScreen()));
                 },
                 itemBuilder: (context) => [
                   const PopupMenuItem(
@@ -434,7 +533,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => UpdateDialog.show(context),
+                          onTap: () => _showUpdatePopup(),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -460,7 +559,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                       ElevatedButton(
-                        onPressed: () => UpdateDialog.show(context),
+                        onPressed: () => _showUpdatePopup(),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primaryBlue,
                           foregroundColor: Colors.white,
@@ -716,62 +815,63 @@ class _RealtimeEventBanner extends StatelessWidget {
             : '${event.email.recipients.length} recipient${event.email.recipients.length == 1 ? '' : 's'}'
                 '${event.activeParallelCount > 1 ? ' • ${event.activeParallelCount} running in parallel' : ''}');
 
-    return Material(
-      color: color.withOpacity(0.08),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withOpacity(0.35)),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Outfit',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: color,
+    return GlassContainer(
+      borderRadius: 16,
+      blurSigma: 14,
+      color: color.withValues(alpha: 0.10),
+      borderColor: color.withValues(alpha: 0.35),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Outfit',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: color,
+                        ),
                       ),
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontSize: 11,
-                        color: AppTheme.textMid,
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 11,
+                          color: AppTheme.textMid,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              InkWell(
-                onTap: onDismiss,
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(Icons.close_rounded, size: 16, color: AppTheme.textLight),
+                InkWell(
+                  onTap: onDismiss,
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(Icons.close_rounded, size: 16, color: AppTheme.textLight),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ).animate().fade(duration: 250.ms).slideY(begin: -0.15, end: 0);
+    ).animate().fade(duration: 280.ms).blur(begin: const Offset(8, 8), end: Offset.zero, duration: 280.ms).slideY(begin: -0.15, end: 0);
   }
 }
 
@@ -789,13 +889,12 @@ class _LiveParallelSendingPanel extends StatelessWidget {
     final totalSent = activeCampaigns.fold<int>(0, (s, e) => s + e.sentCount);
     final totalRecipients = activeCampaigns.fold<int>(0, (s, e) => s + e.recipients.length);
 
-    return Container(
+    return GlassContainer(
+      borderRadius: 18,
+      blurSigma: 16,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.primaryBlue.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.28)),
-      ),
+      color: AppTheme.primaryBlue.withValues(alpha: 0.08),
+      borderColor: AppTheme.primaryBlue.withValues(alpha: 0.30),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1172,7 +1271,7 @@ class _EmailCard extends StatelessWidget {
             ),
           ),
         ),
-      ).animate().fade(duration: 350.ms, delay: (index * 60).ms).slideX(begin: 0.05, end: 0),
+      ).animate().fade(duration: 320.ms, delay: (index * 50).ms).blur(begin: const Offset(4, 4), end: Offset.zero, duration: 300.ms).slideX(begin: 0.04, end: 0),
     );
   }
 }
@@ -1250,7 +1349,12 @@ class _ContactsDialog extends StatelessWidget {
 class _DetailsDialog extends StatefulWidget {
   final ScheduledEmail email;
   final Color primaryColor;
-  const _DetailsDialog({required this.email, required this.primaryColor});
+  final ValueNotifier<List<ScheduledEmail>> historyNotifier;
+  const _DetailsDialog({
+    required this.email,
+    required this.primaryColor,
+    required this.historyNotifier,
+  });
 
   @override
   State<_DetailsDialog> createState() => _DetailsDialogState();
@@ -1258,67 +1362,129 @@ class _DetailsDialog extends StatefulWidget {
 
 class _DetailsDialogState extends State<_DetailsDialog> {
   bool _showBody = false;
-  bool _showRecipients = false;
+  late bool _showRecipients;
+
+  @override
+  void initState() {
+    super.initState();
+    _showRecipients = SendNotificationMonitor.isActiveStatus(widget.email.status);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final email = widget.email;
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
+    return ValueListenableBuilder<List<ScheduledEmail>>(
+      valueListenable: widget.historyNotifier,
+      builder: (context, history, _) {
+        final email = history.where((e) => e.id == widget.email.id).firstOrNull ?? widget.email;
+        final isActive = SendNotificationMonitor.isActiveStatus(email.status);
+        final total = email.recipients.length;
+        final sent = email.sentCount.clamp(0, total);
+        final progress = total > 0 ? sent / total : 0.0;
+        final Color statusColor = email.status == 'Success'
+            ? AppTheme.successGreen
+            : (email.status.startsWith('Failed')
+                ? AppTheme.errorRed
+                : (isActive ? AppTheme.primaryBlue : AppTheme.warningAmber));
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: GlassContainer(
+            borderRadius: 24,
+            blurSigma: 18,
+            color: Colors.white.withValues(alpha: 0.88),
+            borderColor: isActive
+                ? AppTheme.primaryBlue.withValues(alpha: 0.35)
+                : AppTheme.divider,
+            padding: const EdgeInsets.all(24),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          (email.scheduleName != null && email.scheduleName!.isNotEmpty)
-                              ? email.scheduleName!
-                              : 'Schedule Details',
-                          style: const TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              (email.scheduleName != null && email.scheduleName!.isNotEmpty)
+                                  ? email.scheduleName!
+                                  : 'Schedule Details',
+                              style: const TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryBlue.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    email.isMerged ? 'Merged PDF' : email.type,
+                                    style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    email.status,
+                                    style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: statusColor, fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryBlue.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            email.type,
-                            style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold),
-                          ),
+                      ),
+                      IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
+                    ],
+                  ),
+                  if (isActive && total > 0) ...[
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Live Sending Progress',
+                          style: TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primaryBlue),
+                        ),
+                        Text(
+                          '$sent / $total (${(progress * 100).toStringAsFixed(0)}%)',
+                          style: const TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
                         ),
                       ],
                     ),
-                  ),
-                  IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _infoRow(Icons.account_circle_outlined, 'Sender', email.senderEmail),
-              if (email.createdAt != null)
-                _infoRow(Icons.add_task_rounded, 'Created On', email.createdAt!),
-              Builder(builder: (context) {
-                String wd = '';
-                try {
-                  final p = email.scheduledDate.split('/');
-                  if (p.length == 3) {
-                    final dt = DateTime(int.parse(p[2]), int.parse(p[1]), int.parse(p[0]));
-                    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                    wd = ' (${days[dt.weekday - 1]})';
-                  }
-                } catch (_) {}
-                return _infoRow(Icons.calendar_today_rounded, 'Date', '${email.scheduledDate}$wd');
-              }),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: progress > 0 ? progress : null,
+                        backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.14),
+                        valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
+                        minHeight: 6,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  _infoRow(Icons.account_circle_outlined, 'Sender', email.senderEmail),
+                  if (email.createdAt != null)
+                    _infoRow(Icons.add_task_rounded, 'Created On', email.createdAt!),
+                  Builder(builder: (context) {
+                    final wd = DateHelpers.weekdayName(email.scheduledDate);
+                    final suffix = wd.isNotEmpty ? ' ($wd)' : '';
+                    return _infoRow(Icons.calendar_today_rounded, 'Date', '${email.scheduledDate}$suffix');
+                  }),
               _infoRow(Icons.access_time_rounded, 'Time', email.scheduledTime),
               if (email.type == 'PDF' || email.isMerged)
                 _infoRow(Icons.speed_rounded, 'Daily Limit', '${email.dailyLimit > 0 ? email.dailyLimit : 40} emails / day'),
@@ -1449,7 +1615,9 @@ class _DetailsDialogState extends State<_DetailsDialog> {
           ),
         ),
       ),
-    ).animate().scale(duration: 250.ms, curve: Curves.easeOutBack).fade();
+    ).animate().scale(duration: 280.ms, curve: Curves.easeOutBack).fade().blur(begin: const Offset(6, 6), end: Offset.zero, duration: 280.ms);
+      },
+    );
   }
 
   Widget _infoRow(IconData icon, String label, String value) {

@@ -1,8 +1,10 @@
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'dashboard_screen.dart';
 import '../theme/app_theme.dart';
+import '../widgets/glass_widgets.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -33,12 +35,7 @@ class _SplashScreenState extends State<SplashScreen>
     Future.delayed(const Duration(milliseconds: 1200), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          PageRouteBuilder(
-            pageBuilder: (context, a, secondaryAnimation) => const DashboardScreen(),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-                FadeTransition(opacity: animation, child: child),
-            transitionDuration: const Duration(milliseconds: 500),
-          ),
+          BlurredPageRoute(builder: (_) => const DashboardScreen()),
         );
       }
     });
@@ -115,34 +112,33 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo in white card with subtle blue border
-                Container(
-                  width: 130,
-                  height: 130,
+                // Logo in frosted glass card with blur-in entrance
+                GlassContainer(
+                  borderRadius: 32,
+                  blurSigma: 18,
                   padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(32),
-                    border: Border.all(
-                      color: AppTheme.primaryBlue.withOpacity(0.15),
-                      width: 1.5,
+                  color: Colors.white.withValues(alpha: 0.82),
+                  borderColor: AppTheme.primaryBlue.withValues(alpha: 0.18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryBlue.withValues(alpha: 0.14),
+                      blurRadius: 36,
+                      offset: const Offset(0, 8),
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryBlue.withOpacity(0.12),
-                        blurRadius: 32,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
+                  ],
+                  child: SizedBox(
+                    width: 90,
+                    height: 90,
+                    child: Image.asset('assets/Logo.png', fit: BoxFit.contain),
                   ),
-                  child: Image.asset('assets/Logo.png', fit: BoxFit.contain),
                 )
                     .animate()
-                    .fade(duration: 600.ms)
+                    .fade(duration: 550.ms)
+                    .blur(begin: const Offset(12, 12), end: Offset.zero, duration: 550.ms)
                     .scale(
-                      begin: const Offset(0.6, 0.6),
+                      begin: const Offset(0.7, 0.7),
                       curve: Curves.easeOutBack,
-                      duration: 800.ms,
+                      duration: 700.ms,
                     ),
 
                 const SizedBox(height: 28),
@@ -158,9 +154,10 @@ class _SplashScreenState extends State<SplashScreen>
                     letterSpacing: 1.5,
                   ),
                 )
-                    .animate(delay: 400.ms)
-                    .fade(duration: 600.ms)
-                    .slideY(begin: 0.4, end: 0.0, duration: 600.ms),
+                    .animate(delay: 250.ms)
+                    .fade(duration: 500.ms)
+                    .blur(begin: const Offset(8, 8), end: Offset.zero, duration: 500.ms)
+                    .slideY(begin: 0.35, end: 0.0, duration: 500.ms),
 
                 const SizedBox(height: 8),
 
@@ -174,8 +171,9 @@ class _SplashScreenState extends State<SplashScreen>
                     letterSpacing: 0.4,
                   ),
                 )
-                    .animate(delay: 650.ms)
-                    .fade(duration: 500.ms),
+                    .animate(delay: 420.ms)
+                    .fade(duration: 450.ms)
+                    .blur(begin: const Offset(6, 6), end: Offset.zero, duration: 450.ms),
 
                 const SizedBox(height: 56),
 

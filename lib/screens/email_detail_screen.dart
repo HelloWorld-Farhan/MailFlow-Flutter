@@ -8,6 +8,7 @@ import '../services/backend_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/date_helpers.dart';
+import '../widgets/glass_widgets.dart';
 
 class EmailDetailScreen extends StatefulWidget {
   const EmailDetailScreen({Key? key}) : super(key: key);
@@ -34,8 +35,10 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
     _loadGroups();
     if (AppConfig.isBackendEnabled) {
       _realtimeSub = BackendService.onDataChanged.listen((_) => _loadGroups(silent: true));
+      _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) => _loadGroups(silent: true));
     } else {
-      _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) => _loadGroups(silent: true));
+      _realtimeSub = StorageService.onDataChanged.listen((_) => _loadGroups(silent: true));
+      _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) => _loadGroups(silent: true));
     }
     _scheduleMidnightRefresh();
   }
@@ -227,7 +230,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
         ? email.scheduleName!
         : email.subject.isNotEmpty ? email.subject : 'Schedule Details';
 
-    showDialog(
+    showBlurredDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -413,7 +416,8 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
       appBar: AppBar(
         title: const Text('Email Groups',
             style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, color: AppTheme.textDark)),
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
+        flexibleSpace: buildGlassAppBarBackground(),
         elevation: 0,
         iconTheme: const IconThemeData(color: AppTheme.textDark),
         surfaceTintColor: Colors.transparent,

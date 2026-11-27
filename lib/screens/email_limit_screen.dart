@@ -5,6 +5,7 @@ import '../services/app_config.dart';
 import '../services/backend_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/glass_widgets.dart';
 
 class EmailLimitScreen extends StatefulWidget {
   const EmailLimitScreen({Key? key}) : super(key: key);
@@ -32,9 +33,10 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
     _loadLimits();
     if (AppConfig.isBackendEnabled) {
       _realtimeSub = BackendService.onDataChanged.listen((_) => _loadLimits(silent: true));
+      _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) => _loadLimits(silent: true));
     } else {
-      // Auto-refresh every 5 seconds in local-only mode
-      _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _realtimeSub = StorageService.onDataChanged.listen((_) => _loadLimits(silent: true));
+      _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
         _loadLimits(silent: true);
       });
     }
@@ -128,7 +130,8 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
     return Scaffold(
       backgroundColor: AppTheme.bgSurface,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
+        flexibleSpace: buildGlassAppBarBackground(),
         elevation: 0,
         centerTitle: false,
         iconTheme: const IconThemeData(color: AppTheme.textDark),
@@ -318,29 +321,24 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
                               final bool limitReached = count >= 50;
                               final color = _colorFor(count);
 
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.only(bottom: 12),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius:
-                                        BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: limitReached
-                                          ? AppTheme.errorRed
-                                              .withOpacity(0.3)
-                                          : AppTheme.divider,
-                                    ),
+                                return Padding(
+                                  padding:
+                                      const EdgeInsets.only(bottom: 12),
+                                  child: GlassContainer(
+                                    borderRadius: 20,
+                                    blurSigma: 12,
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                    borderColor: limitReached
+                                        ? AppTheme.errorRed
+                                            .withValues(alpha: 0.35)
+                                        : AppTheme.divider,
                                     boxShadow: [
                                       BoxShadow(
-                                        color: color.withOpacity(0.06),
-                                        blurRadius: 12,
+                                        color: color.withValues(alpha: 0.08),
+                                        blurRadius: 14,
                                         offset: const Offset(0, 4),
                                       ),
                                     ],
-                                  ),
-                                  child: Padding(
                                     padding: const EdgeInsets.all(18),
                                     child: Column(
                                       crossAxisAlignment:
@@ -516,13 +514,16 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
                                             ),
                                           ],
                                         ),
-                                      ],
+                                        ],
+                                      ),
+                                  ).animate().fade(
+                                      duration: 360.ms,
+                                      delay: (index * 50).ms).blur(
+                                      begin: const Offset(6, 6),
+                                      end: Offset.zero,
+                                      duration: 360.ms,
                                     ),
-                                  ),
-                                ).animate().fade(
-                                    duration: 400.ms,
-                                    delay: (index * 60).ms),
-                              );
+                                );
                             },
                             childCount: _limits.length,
                           ),

@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -26,11 +28,31 @@ android {
         versionName = flutter.versionName
     }
 
+    val ksPath = System.getenv("MAILFLOW_KEYSTORE_PATH")
+    val ksFile = if (!ksPath.isNullOrBlank()) File(ksPath) else null
+    val hasReleaseSigning = ksFile != null && ksFile.exists() &&
+        !System.getenv("MAILFLOW_KEYSTORE_PASSWORD").isNullOrBlank() &&
+        !System.getenv("MAILFLOW_KEY_ALIAS").isNullOrBlank() &&
+        !System.getenv("MAILFLOW_KEY_PASSWORD").isNullOrBlank()
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = ksFile
+                storePassword = System.getenv("MAILFLOW_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("MAILFLOW_KEY_ALIAS")
+                keyPassword = System.getenv("MAILFLOW_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

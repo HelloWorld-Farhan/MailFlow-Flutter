@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -128,6 +129,10 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   static final SendNotificationMonitor monitor = SendNotificationMonitor();
+  static final StreamController<String> _tapController =
+      StreamController<String>.broadcast();
+  static Stream<String> get onNotificationTap => _tapController.stream;
+  static String? _pendingInitialCampaignId;
   static bool _isInitialized = false;
 
   // Deduplication guard so background dispatcher + UI monitor don't double-ring the same alert.
@@ -140,6 +145,7 @@ class NotificationService {
   static int _campaignNotifId(String campaignId) => 2000 + (campaignId.hashCode.abs() % 50000);
   static int _progressNotifId(String campaignId) => 55000 + (campaignId.hashCode.abs() % 50000);
   static const int _parallelSummaryId = 1998;
+  static const String updatePayload = 'app_update';
 
   static Future<void> initialize() async {
     if (_isInitialized || !_isSupported) return;
@@ -155,13 +161,37 @@ class NotificationService {
       windows: windowsSettings,
     );
 
-    await _notificationsPlugin.initialize(settings: initSettings);
+    await _notificationsPlugin.initialize(
+      settings: initSettings,
+      onDidReceiveNotificationResponse: (response) {
+        final payload = response.payload?.trim();
+        if (payload != null && payload.isNotEmpty) {
+          _tapController.add(payload);
+        }
+      },
+    );
+    try {
+      final launchDetails = await _notificationsPlugin.getNotificationAppLaunchDetails();
+      final launchPayload = launchDetails?.notificationResponse?.payload?.trim();
+      if ((launchDetails?.didNotificationLaunchApp ?? false) &&
+          launchPayload != null &&
+          launchPayload.isNotEmpty) {
+        _pendingInitialCampaignId = launchPayload;
+      }
+    } catch (_) {}
     if (_isAndroid) {
       await _notificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();
     }
     _isInitialized = true;
+  }
+
+  /// Returns and clears the campaign ID if the app was cold-launched by tapping a notification.
+  static String? consumeInitialCampaignId() {
+    final id = _pendingInitialCampaignId;
+    _pendingInitialCampaignId = null;
+    return id;
   }
 
   static String _labelFor(ScheduledEmail email) {
@@ -247,6 +277,7 @@ class NotificationService {
       title: 'Sending Started: $name',
       body: 'Dispatching $total recipient${total == 1 ? '' : 's'}$parallelNote',
       notificationDetails: details,
+      payload: email.id,
     );
   }
 
@@ -299,6 +330,7 @@ class NotificationService {
       title: 'Sending: $name',
       body: '$sent / $total sent$recipientPart$parallelPart',
       notificationDetails: details,
+      payload: email.id,
     );
   }
 
@@ -345,6 +377,7 @@ class NotificationService {
       title: '${active.length} Campaigns Sending in Parallel',
       body: '$totalSent / $totalAll emails sent across ${active.length} schedules',
       notificationDetails: details,
+      payload: active.first.id,
     );
   }
 
@@ -392,6 +425,7 @@ class NotificationService {
           ? '${email.status}$stillRunning'
           : 'All $sent/$total emails sent successfully$stillRunning',
       notificationDetails: details,
+      payload: email.id,
     );
   }
 
@@ -433,6 +467,7 @@ class NotificationService {
       title: 'MailFlow Update Available (v$newVersion)',
       body: body ?? 'A new update is ready! Tap to download and install.',
       notificationDetails: details,
+      payload: updatePayload,
     );
   }
 }

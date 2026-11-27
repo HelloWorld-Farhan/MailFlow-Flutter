@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../theme/app_theme.dart';
 import '../models/template_item.dart';
 import '../services/app_config.dart';
 import '../services/backend_service.dart';
 import '../services/dispatcher.dart';
 import '../services/storage_service.dart';
+import '../widgets/glass_widgets.dart';
 import 'package:flutter/services.dart' as import_services;
 
 class SettingsScreen extends StatefulWidget {
@@ -70,7 +72,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       return RegExp(r'<[a-zA-Z][^>]*>').hasMatch(text);
     }
 
-    showDialog(
+    showBlurredDialog(
       context: context,
       builder: (dialogContext) {
         String? bodyError;
@@ -209,7 +211,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
 
   Future<void> _deleteTemplate(String id) async {
-    final bool? confirm = await showDialog<bool>(
+    final bool? confirm = await showBlurredDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirm Deletion', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
@@ -246,11 +248,10 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
-        return Card(
-          elevation: 0,
-          color: AppTheme.bgSurface,
-          margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        return GlassContainer(
+          borderRadius: 16,
+          blurSigma: 10,
+          color: AppTheme.bgSurface.withValues(alpha: 0.85),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             title: Text(item.name, style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppTheme.textDark)),
@@ -278,7 +279,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               ],
             ),
           ),
-        );
+        ).animate().fade(duration: 240.ms).blur(begin: const Offset(5, 5), end: Offset.zero, duration: 240.ms);
       },
     );
   }
@@ -289,7 +290,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('Settings', style: TextStyle(color: AppTheme.textDark, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
+        flexibleSpace: buildGlassAppBarBackground(),
         elevation: 0,
         iconTheme: const IconThemeData(color: AppTheme.textDark),
         bottom: TabBar(
