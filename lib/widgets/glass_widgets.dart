@@ -2,6 +2,57 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
+/// Theme-aware MailFlow logo badge that adapts the inner mark & container for Dark Mode.
+class AppLogo extends StatelessWidget {
+  final double size;
+  final double padding;
+  final double borderRadius;
+
+  const AppLogo({
+    super.key,
+    this.size = 26,
+    this.padding = 4,
+    this.borderRadius = 10,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = AppTheme.isDark(context);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      width: size + padding * 2,
+      height: size + padding * 2,
+      padding: EdgeInsets.all(padding),
+      decoration: BoxDecoration(
+        color: isDark ? AppTheme.coffeeBean2 : Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: Border.all(
+          color: isDark ? AppTheme.blackberryCream : AppTheme.divider,
+        ),
+        boxShadow: isDark
+            ? [
+                BoxShadow(
+                  color: AppTheme.blackberryCream.withValues(alpha: 0.35),
+                  blurRadius: 12,
+                ),
+              ]
+            : null,
+      ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        child: Image.asset(
+          'assets/Logo.png',
+          key: ValueKey(isDark),
+          fit: BoxFit.contain,
+          color: isDark ? const Color(0xFFF6ECF5) : null,
+          colorBlendMode: isDark ? BlendMode.srcIn : null,
+        ),
+      ),
+    );
+  }
+}
+
 /// Centers content cleanly on tablets/desktops while filling phones edge-to-edge.
 class ResponsiveCenter extends StatelessWidget {
   final Widget child;

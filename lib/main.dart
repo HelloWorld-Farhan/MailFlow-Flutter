@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'theme/app_theme.dart';
@@ -39,7 +40,27 @@ class MailFlowApp extends StatelessWidget {
               systemNavigationBarColor: isDark ? AppTheme.darkBg : AppTheme.bgWhite,
               systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
             ));
-            return child ?? const SizedBox.shrink();
+            return AnimatedSwitcher(
+              duration: const Duration(milliseconds: 380),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (w, anim) {
+                final sigma = (1.0 - anim.value) * 6.0;
+                return FadeTransition(
+                  opacity: anim,
+                  child: sigma > 0.05
+                      ? ImageFiltered(
+                          imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+                          child: w,
+                        )
+                      : w,
+                );
+              },
+              child: KeyedSubtree(
+                key: ValueKey(isDark),
+                child: child ?? const SizedBox.shrink(),
+              ),
+            );
           },
           home: const SplashScreen(),
         );

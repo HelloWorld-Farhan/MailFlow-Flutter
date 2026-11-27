@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
+import 'glass_widgets.dart';
 
 class UpdateDialog extends StatefulWidget {
   final UpdateCheckResult? initialResult;
@@ -209,17 +210,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
   Widget _buildHeader() {
     return Row(
       children: [
-        Container(
-          width: 44,
-          height: 44,
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: AppTheme.primaryBlue.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.20)),
-          ),
-          child: Image.asset('assets/Logo.png'),
-        ),
+        const AppLogo(size: 32, padding: 6, borderRadius: 14),
         const SizedBox(width: 14),
         Expanded(
           child: Column(

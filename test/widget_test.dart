@@ -241,8 +241,8 @@ void main() {
     expect(light.primaryColor, AppTheme.primaryBlue);
     expect(light.scaffoldBackgroundColor, AppTheme.bgWhite);
     expect(dark.brightness, Brightness.dark);
-    expect(dark.scaffoldBackgroundColor, AppTheme.darkBg);
-    expect(dark.popupMenuTheme.color, AppTheme.darkCard);
+    expect(dark.scaffoldBackgroundColor, const Color(0xFF000000));
+    expect(dark.popupMenuTheme.color, AppTheme.coffeeBean2);
   });
 
   test('DateHelpers.todayDmy returns DD/MM/YYYY for today', () {

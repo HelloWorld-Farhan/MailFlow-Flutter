@@ -31,14 +31,24 @@ class AppTheme {
   static const Color textLight    = Color(0xFF94A3B8); // Slate 400
   static const Color divider      = Color(0xFFE2E8F0); // Slate 200
 
-  // ── Dark Slate + Vivid Blue palette ─────────────────────────────────────
-  static const Color darkBg       = Color(0xFF0B1220);
-  static const Color darkSurface  = Color(0xFF131D31);
-  static const Color darkCard     = Color(0xFF162033);
-  static const Color darkInput    = Color(0xFF1D2940);
-  static const Color darkText     = Color(0xFFF1F5F9);
-  static const Color darkTextMid  = Color(0xFF94A3B8);
-  static const Color darkDivider  = Color(0xFF28354D);
+  // ── Blackberry-Violet + Pure-Black Dark palette ─────────────────────────
+  static const Color blackberryCream  = Color(0xFF472A44);
+  static const Color midnightViolet   = Color(0xFF3F253C);
+  static const Color midnightViolet2  = Color(0xFF372135);
+  static const Color midnightViolet3  = Color(0xFF2F1C2D);
+  static const Color midnightViolet4  = Color(0xFF271726);
+  static const Color coffeeBean       = Color(0xFF20131E);
+  static const Color coffeeBean2      = Color(0xFF180E17);
+  static const Color coffeeBean3      = Color(0xFF10090F);
+  static const Color darkBlack        = Color(0xFF080508);
+
+  static const Color darkBg       = Color(0xFF000000);
+  static const Color darkSurface  = coffeeBean3;
+  static const Color darkCard     = coffeeBean2;
+  static const Color darkInput    = coffeeBean;
+  static const Color darkText     = Color(0xFFF8F4F8);
+  static const Color darkTextMid  = Color(0xFFC7B6C5);
+  static const Color darkDivider  = midnightViolet3;
 
   static bool isDark(BuildContext context) => Theme.of(context).brightness == Brightness.dark;
   static Color scaffoldBg(BuildContext context) => isDark(context) ? darkBg : bgWhite;

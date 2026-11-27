@@ -68,7 +68,7 @@ class _SplashScreenState extends State<SplashScreen>
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    AppTheme.primaryBlue.withValues(alpha: isDark ? 0.22 : 0.12),
+                    (isDark ? AppTheme.blackberryCream : AppTheme.primaryBlue).withValues(alpha: isDark ? 0.36 : 0.12),
                     Colors.transparent,
                   ],
                 ),
@@ -86,7 +86,7 @@ class _SplashScreenState extends State<SplashScreen>
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    AppTheme.accentBlue.withValues(alpha: isDark ? 0.18 : 0.10),
+                    (isDark ? AppTheme.midnightViolet : AppTheme.accentBlue).withValues(alpha: isDark ? 0.32 : 0.10),
                     Colors.transparent,
                   ],
                 ),
@@ -94,7 +94,7 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           ),
 
-          // ── Blue wave at bottom ───────────────────────────────────────
+          // ── Wave at bottom ────────────────────────────────────────────
           Positioned(
             bottom: 0,
             left: 0,
@@ -103,7 +103,7 @@ class _SplashScreenState extends State<SplashScreen>
               animation: _waveController,
               builder: (context, child) => CustomPaint(
                 size: Size(size.width, 160),
-                painter: _WavePainter(_waveController.value),
+                painter: _WavePainter(_waveController.value, isDark),
               ),
             ),
           ),
@@ -117,21 +117,17 @@ class _SplashScreenState extends State<SplashScreen>
                 GlassContainer(
                   borderRadius: 32,
                   blurSigma: 18,
-                  padding: const EdgeInsets.all(20),
-                  color: (isDark ? AppTheme.darkCard : Colors.white).withValues(alpha: isDark ? 0.86 : 0.82),
-                  borderColor: (isDark ? AppTheme.lightBlue : AppTheme.primaryBlue).withValues(alpha: 0.24),
+                  padding: const EdgeInsets.all(14),
+                  color: (isDark ? AppTheme.darkCard : Colors.white).withValues(alpha: isDark ? 0.88 : 0.82),
+                  borderColor: (isDark ? AppTheme.blackberryCream : AppTheme.primaryBlue).withValues(alpha: isDark ? 0.55 : 0.18),
                   boxShadow: [
                     BoxShadow(
-                      color: AppTheme.primaryBlue.withValues(alpha: isDark ? 0.24 : 0.14),
+                      color: (isDark ? AppTheme.blackberryCream : AppTheme.primaryBlue).withValues(alpha: isDark ? 0.34 : 0.14),
                       blurRadius: 36,
                       offset: const Offset(0, 8),
                     ),
                   ],
-                  child: SizedBox(
-                    width: 90,
-                    height: 90,
-                    child: Image.asset('assets/Logo.png', fit: BoxFit.contain),
-                  ),
+                  child: const AppLogo(size: 86, padding: 6, borderRadius: 22),
                 )
                     .animate()
                     .fade(duration: 550.ms)
@@ -217,13 +213,14 @@ class _SplashScreenState extends State<SplashScreen>
 
 class _WavePainter extends CustomPainter {
   final double progress;
-  _WavePainter(this.progress);
+  final bool isDark;
+  _WavePainter(this.progress, this.isDark);
 
   @override
   void paint(Canvas canvas, Size size) {
     void drawWave(double opacity, double heightFactor, double offset) {
       final paint = Paint()
-        ..color = AppTheme.primaryBlue.withOpacity(opacity)
+        ..color = (isDark ? AppTheme.blackberryCream : AppTheme.primaryBlue).withValues(alpha: opacity)
         ..style = PaintingStyle.fill;
       final path = Path();
       path.moveTo(0, size.height * heightFactor);

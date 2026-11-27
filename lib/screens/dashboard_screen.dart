@@ -378,16 +378,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             title: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppTheme.border(context)),
-                  ),
-                  child: Image.asset('assets/Logo.png'),
-                ),
+                const AppLogo(size: 24, padding: 4, borderRadius: 10),
                 const SizedBox(width: 8),
                 Text(
                   'MailFlow',
