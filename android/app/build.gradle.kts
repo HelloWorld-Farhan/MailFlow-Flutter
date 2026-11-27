@@ -1,4 +1,6 @@
 import java.io.File
+import java.io.FileInputStream
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -28,20 +30,33 @@ android {
         versionName = flutter.versionName
     }
 
-    val ksPath = System.getenv("MAILFLOW_KEYSTORE_PATH")
-    val ksFile = if (!ksPath.isNullOrBlank()) File(ksPath) else null
+    val keyPropsFile = rootProject.file("key.properties")
+    val keyProps = Properties()
+    if (keyPropsFile.exists()) {
+        FileInputStream(keyPropsFile).use { keyProps.load(it) }
+    }
+
+    val ksPath = System.getenv("MAILFLOW_KEYSTORE_PATH") ?: keyProps.getProperty("storeFile")
+    val ksFile = if (!ksPath.isNullOrBlank()) {
+        val f = File(ksPath)
+        if (f.isAbsolute) f else file(ksPath)
+    } else null
+    val ksPass = System.getenv("MAILFLOW_KEYSTORE_PASSWORD") ?: keyProps.getProperty("storePassword")
+    val ksAlias = System.getenv("MAILFLOW_KEY_ALIAS") ?: keyProps.getProperty("keyAlias")
+    val ksKeyPass = System.getenv("MAILFLOW_KEY_PASSWORD") ?: keyProps.getProperty("keyPassword")
+
     val hasReleaseSigning = ksFile != null && ksFile.exists() &&
-        !System.getenv("MAILFLOW_KEYSTORE_PASSWORD").isNullOrBlank() &&
-        !System.getenv("MAILFLOW_KEY_ALIAS").isNullOrBlank() &&
-        !System.getenv("MAILFLOW_KEY_PASSWORD").isNullOrBlank()
+        !ksPass.isNullOrBlank() &&
+        !ksAlias.isNullOrBlank() &&
+        !ksKeyPass.isNullOrBlank()
 
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = ksFile
-                storePassword = System.getenv("MAILFLOW_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("MAILFLOW_KEY_ALIAS")
-                keyPassword = System.getenv("MAILFLOW_KEY_PASSWORD")
+                storePassword = ksPass
+                keyAlias = ksAlias
+                keyPassword = ksKeyPass
             }
         }
     }

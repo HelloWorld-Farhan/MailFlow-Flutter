@@ -528,8 +528,48 @@ class _UpdateDialogState extends State<UpdateDialog> {
   Widget _buildActions() {
     switch (_state) {
       case _UpdateState.checking:
-      case _UpdateState.installing:
         return const SizedBox.shrink();
+
+      case _UpdateState.installing:
+        return Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: BorderSide(color: AppTheme.border(context)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: Text(
+                  'Close',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textSecondary(context),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _startDownload,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryBlue,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text(
+                  'Retry Install',
+                  style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        );
 
       case _UpdateState.upToDate:
         return Row(

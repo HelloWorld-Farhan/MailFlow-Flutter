@@ -242,6 +242,11 @@ class UpdateService {
       await sink.close();
 
       if (!isWindows && !isMacOs && Platform.isAndroid) {
+        final size = await saveFile.length();
+        final header = await saveFile.openRead(0, 2).first.catchError((_) => <int>[]);
+        if (size < 100 * 1024 || header.length < 2 || header[0] != 0x50 || header[1] != 0x4B) {
+          throw Exception('Downloaded file is not a valid APK package.');
+        }
         final allowed = await ensureInstallPermission();
         if (!allowed) {
           throw Exception('Please allow "Install unknown apps" for MailFlow in Android Settings and tap Retry.');
