@@ -20,7 +20,6 @@ import '../utils/time_input_formatter.dart';
 import '../utils/pdf_parser.dart';
 import '../theme/app_theme.dart';
 import 'settings_screen.dart';
-import 'email_detail_screen.dart';
 import 'email_limit_screen.dart';
 import '../models/template_item.dart';
 import '../widgets/glass_widgets.dart';
@@ -442,11 +441,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ),
                 ],
-              ),
-              IconButton(
-                icon: Icon(Icons.group_outlined, color: AppTheme.textSecondary(context), size: 22),
-                tooltip: 'Email Groups',
-                onPressed: () => Navigator.push(context, BlurredPageRoute(builder: (_) => const EmailDetailScreen())),
               ),
               IconButton(
                 icon: Icon(Icons.data_usage_rounded, color: AppTheme.textSecondary(context), size: 22),

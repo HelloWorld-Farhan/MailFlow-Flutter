@@ -268,4 +268,15 @@ void main() {
     final afterDelete = await StorageService.getContactsWithSources();
     expect(afterDelete.length, 2);
   });
+
+  test('StorageService saves and loads daily limits history per date', () async {
+    SharedPreferences.setMockInitialValues({});
+    await StorageService.saveDailyLimitsSnapshot('28/11/2026', {'a@gmail.com': 12, 'b@gmail.com': 50});
+    await StorageService.saveDailyLimitsSnapshot('27/11/2026', {'a@gmail.com': 5});
+
+    final history = await StorageService.getDailyLimitsHistory();
+    expect(history['28/11/2026']?['a@gmail.com'], 12);
+    expect(history['28/11/2026']?['b@gmail.com'], 50);
+    expect(history['27/11/2026']?['a@gmail.com'], 5);
+  });
 }

@@ -15,6 +15,7 @@ class StorageService {
   static const String _sendersKey = 'saved_senders';
   static const String _contactsKey = 'saved_contacts';
   static const String _contactsSourcesKey = 'saved_contacts_sources';
+  static const String _dailyLimitsHistoryKey = 'saved_daily_limits_history';
   static const String _templatesKey = 'saved_templates';
   static const String _themeModeKey = 'theme_mode';
 
@@ -119,6 +120,34 @@ class StorageService {
       decoded.remove(normalized);
       await prefs.setString(_contactsSourcesKey, jsonEncode(decoded));
     }
+  }
+
+  /// Saves a date's (`DD/MM/YYYY`) per-sender sent counts locally, retaining the latest 14 days.
+  static Future<void> saveDailyLimitsSnapshot(String dateDmy, Map<String, int> counts) async {
+    final prefs = await SharedPreferences.getInstance();
+    final history = await getDailyLimitsHistory();
+    history[dateDmy] = Map<String, int>.from(counts);
+    if (history.length > 14) {
+      final keys = history.keys.toList();
+      for (final oldKey in keys.take(history.length - 14)) {
+        history.remove(oldKey);
+      }
+    }
+    await prefs.setString(_dailyLimitsHistoryKey, jsonEncode(history));
+  }
+
+  /// Returns saved daily sender sent counts keyed by `DD/MM/YYYY`.
+  static Future<Map<String, Map<String, int>>> getDailyLimitsHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_dailyLimitsHistoryKey);
+    if (raw == null || raw.isEmpty) return {};
+    final decoded = jsonDecode(raw) as Map<String, dynamic>;
+    final result = <String, Map<String, int>>{};
+    for (final entry in decoded.entries) {
+      final inner = entry.value as Map<String, dynamic>;
+      result[entry.key] = inner.map((k, v) => MapEntry(k, (v as num).toInt()));
+    }
+    return result;
   }
 
   static Future<List<TemplateItem>> getTemplates() async {
