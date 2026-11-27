@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math' show min;
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -314,11 +315,20 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _showAllContacts() async {
-    final contacts = await StorageService.getExtractedEmails();
+    // Backfill recipients from existing schedules so Single / Multiple / PDF filters stay complete.
+    final Map<String, List<String>> byType = {};
+    for (final item in _history) {
+      if (item.recipients.isEmpty) continue;
+      byType.putIfAbsent(item.type, () => []).addAll(item.recipients);
+    }
+    for (final entry in byType.entries) {
+      await StorageService.saveContacts(entry.value, source: entry.key);
+    }
+    final contacts = await StorageService.getContactsWithSources();
     if (!mounted) return;
     showBlurredDialog(
       context: context,
-      builder: (context) => _ContactsDialog(contacts: contacts),
+      builder: (context) => _ContactsDialog(initialContacts: contacts),
     );
   }
 
@@ -1404,53 +1414,290 @@ class _ActionBtn extends StatelessWidget {
   }
 }
 
-class _ContactsDialog extends StatelessWidget {
-  final List<String> contacts;
-  const _ContactsDialog({required this.contacts});
+class _ContactsDialog extends StatefulWidget {
+  final List<SavedContact> initialContacts;
+  const _ContactsDialog({required this.initialContacts});
+
+  @override
+  State<_ContactsDialog> createState() => _ContactsDialogState();
+}
+
+class _ContactsDialogState extends State<_ContactsDialog> {
+  late List<SavedContact> _contacts;
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _selectedFilter = 'All'; // All | Single | Multiple | PDF
+  String _sortMode = 'Recent'; // Recent | A-Z | Z-A
+
+  @override
+  void initState() {
+    super.initState();
+    _contacts = List.of(widget.initialContacts);
+    _searchCtrl.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Color _sourceColor(String src) {
+    switch (src) {
+      case 'PDF':
+        return AppTheme.successGreen;
+      case 'Multiple':
+        return const Color(0xFF8B5CF6);
+      default:
+        return AppTheme.primaryBlue;
+    }
+  }
+
+  List<SavedContact> get _filteredContacts {
+    final query = _searchCtrl.text.trim().toLowerCase();
+    final filtered = _contacts.where((c) {
+      if (_selectedFilter != 'All' && !c.sources.contains(_selectedFilter)) {
+        return false;
+      }
+      if (query.isNotEmpty && !c.email.contains(query)) {
+        return false;
+      }
+      return true;
+    }).toList();
+    if (_sortMode == 'A-Z') {
+      filtered.sort((a, b) => a.email.compareTo(b.email));
+    } else if (_sortMode == 'Z-A') {
+      filtered.sort((a, b) => b.email.compareTo(a.email));
+    } else {
+      // Recent: reverse insertion order
+      return filtered.reversed.toList();
+    }
+    return filtered;
+  }
+
+  int _countFor(String filter) {
+    if (filter == 'All') return _contacts.length;
+    return _contacts.where((c) => c.sources.contains(filter)).length;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final visible = _filteredContacts;
+    final accent = AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue;
+    const filters = ['All', 'Single', 'Multiple', 'PDF'];
+
     return Dialog(
       backgroundColor: AppTheme.cardBg(context),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: 520,
-          maxHeight: MediaQuery.of(context).size.height * 0.65,
+          maxWidth: 540,
+          maxHeight: MediaQuery.of(context).size.height * 0.78,
         ),
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
           child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text('Contacts', style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context))),
-                const Spacer(),
-                IconButton(icon: Icon(Icons.close, color: AppTheme.textSecondary(context)), onPressed: () => Navigator.pop(context)),
-              ],
-            ),
-            Text('${contacts.length} saved', style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textSecondary(context))),
-            const SizedBox(height: 16),
-            Divider(color: AppTheme.border(context)),
-            Expanded(
-              child: contacts.isEmpty
-                  ? Center(child: Text('No contacts yet.', style: TextStyle(color: AppTheme.textSecondary(context))))
-                  : ListView.separated(
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: contacts.length,
-                      separatorBuilder: (_, __) => Divider(color: AppTheme.border(context), height: 1),
-                      itemBuilder: (_, i) => ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: AppTheme.primaryBlue.withOpacity(0.12),
-                          child: Text(contacts[i][0].toUpperCase(), style: const TextStyle(color: AppTheme.primaryBlue, fontWeight: FontWeight.w700)),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Saved Contacts',
+                          style: TextStyle(
+                            fontFamily: 'Outfit',
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textPrimary(context),
+                          ),
                         ),
-                        title: Text(contacts[i], style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textPrimary(context))),
-                      ),
+                        Text(
+                          '${visible.length} of ${_contacts.length} saved',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 12,
+                            color: AppTheme.textSecondary(context),
+                          ),
+                        ),
+                      ],
                     ),
-            ),
-          ],
-        ),
+                  ),
+                  if (visible.isNotEmpty)
+                    IconButton(
+                      tooltip: 'Copy all filtered emails',
+                      icon: Icon(Icons.copy_all_rounded, color: accent, size: 20),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: visible.map((c) => c.email).join(', ')));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Copied ${visible.length} email(s)')),
+                        );
+                      },
+                    ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Sort',
+                    icon: Icon(Icons.sort_rounded, color: AppTheme.textSecondary(context), size: 20),
+                    position: PopupMenuPosition.under,
+                    onSelected: (val) => setState(() => _sortMode = val),
+                    itemBuilder: (_) => ['Recent', 'A-Z', 'Z-A']
+                        .map((m) => PopupMenuItem(
+                              value: m,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _sortMode == m ? Icons.check_rounded : Icons.sort_by_alpha_rounded,
+                                    size: 16,
+                                    color: _sortMode == m ? accent : AppTheme.textSecondary(context),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(m, style: const TextStyle(fontFamily: 'Inter', fontSize: 13)),
+                                ],
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, color: AppTheme.textSecondary(context)),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _searchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Search saved emails...',
+                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  suffixIcon: _searchCtrl.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, size: 16),
+                          onPressed: () => _searchCtrl.clear(),
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 10),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: filters.map((f) {
+                    final selected = _selectedFilter == f;
+                    final count = _countFor(f);
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        label: Text(
+                          '$f ($count)',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: selected ? Colors.white : AppTheme.textPrimary(context),
+                          ),
+                        ),
+                        selected: selected,
+                        selectedColor: AppTheme.primaryBlue,
+                        backgroundColor: AppTheme.surfaceBg(context),
+                        side: BorderSide(color: selected ? AppTheme.primaryBlue : AppTheme.border(context)),
+                        showCheckmark: false,
+                        onSelected: (_) => setState(() => _selectedFilter = f),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Divider(color: AppTheme.border(context), height: 1),
+              Expanded(
+                child: visible.isEmpty
+                    ? Center(
+                        child: Text(
+                          _contacts.isEmpty
+                              ? 'No saved contacts yet.\nEmails from Single, Multiple & PDF schedules appear here.'
+                              : 'No contacts match "$_selectedFilter"${_searchCtrl.text.isNotEmpty ? ' for "${_searchCtrl.text}"' : ''}.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textSecondary(context)),
+                        ),
+                      )
+                    : ListView.separated(
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: visible.length,
+                        separatorBuilder: (_, __) => Divider(color: AppTheme.border(context), height: 1),
+                        itemBuilder: (_, i) {
+                          final contact = visible[i];
+                          final sources = contact.sources.toList()..sort();
+                          return ListTile(
+                            dense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            leading: CircleAvatar(
+                              radius: 17,
+                              backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.12),
+                              child: Text(
+                                contact.email[0].toUpperCase(),
+                                style: TextStyle(color: accent, fontWeight: FontWeight.w700, fontSize: 13),
+                              ),
+                            ),
+                            title: Text(
+                              contact.email,
+                              style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context)),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: sources.isEmpty
+                                ? null
+                                : Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Wrap(
+                                      spacing: 4,
+                                      runSpacing: 2,
+                                      children: sources.map((s) {
+                                        final c = _sourceColor(s);
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: c.withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            s,
+                                            style: TextStyle(fontFamily: 'Inter', fontSize: 10, fontWeight: FontWeight.w700, color: c),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Copy email',
+                                  icon: Icon(Icons.copy_rounded, size: 16, color: AppTheme.textSecondary(context)),
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: contact.email));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Copied ${contact.email}')),
+                                    );
+                                  },
+                                ),
+                                IconButton(
+                                  tooltip: 'Remove contact',
+                                  icon: const Icon(Icons.delete_outline_rounded, size: 17, color: AppTheme.errorRed),
+                                  onPressed: () async {
+                                    await StorageService.deleteContact(contact.email);
+                                    if (!mounted) return;
+                                    setState(() => _contacts.removeWhere((c) => c.email == contact.email));
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     ).animate().scale(duration: 250.ms, curve: Curves.easeOutBack).fade();
@@ -1805,7 +2052,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   String? _bodyMsg; bool _isBodyErr = false;
   String? _dailyLimitMsg; bool _isDailyLimitErr = false;
   bool _showPdfEmails = false;
-  // For inline editing of PDF emails
+  // For inline adding & editing of PDF emails
+  final TextEditingController _addPdfEmailController = TextEditingController();
   final List<TextEditingController> _pdfEmailControllers = [];
   bool _isPdfEmailEditing = false;
   int _currentSenderUsage = 0;
@@ -1888,6 +2136,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     _senderLookupDebounce?.cancel();
     _senderController.dispose();
     _scheduleNameController.dispose();
+    _addPdfEmailController.dispose();
     for (var c in _emailControllers) c.dispose();
     for (var c in _pdfEmailControllers) c.dispose();
     _subjectController.dispose();
@@ -1963,8 +2212,69 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       _pdfEmailControllers.clear();
       for (final e in emails) _pdfEmailControllers.add(TextEditingController(text: e));
       setState(() { _pdfPath = result.files.single.name; _pdfEmails = emails; _showPdfEmails = true; });
-      if (emails.isNotEmpty) await StorageService.saveExtractedEmails(emails);
+      if (emails.isNotEmpty) await StorageService.saveContacts(emails, source: 'PDF');
     }
+  }
+
+  /// Syncs edited PDF email controllers back into [_pdfEmails], validating & deduplicating.
+  bool _syncPdfEdits() {
+    final next = <String>[];
+    final seen = <String>{};
+    for (final c in _pdfEmailControllers) {
+      final e = c.text.trim().toLowerCase();
+      if (e.isEmpty) continue;
+      if (!_isValidEmail(e)) {
+        _showMsg('recipient', 'Invalid email in PDF list: $e');
+        return false;
+      }
+      if (seen.add(e)) next.add(e);
+    }
+    setState(() {
+      _pdfEmails = next;
+      _isPdfEmailEditing = false;
+    });
+    return true;
+  }
+
+  /// Adds one or more comma/space/newline-separated emails to [_pdfEmails] and saves them.
+  Future<void> _addMorePdfEmails() async {
+    final raw = _addPdfEmailController.text.trim();
+    if (raw.isEmpty) return;
+    if (_isPdfEmailEditing && !_syncPdfEdits()) return;
+
+    final parts = raw.split(RegExp(r'[\s,;]+')).map((e) => e.trim().toLowerCase()).where((e) => e.isNotEmpty);
+    final existing = _pdfEmails.map((e) => e.toLowerCase()).toSet();
+    final added = <String>[];
+    final invalid = <String>[];
+
+    for (final e in parts) {
+      if (!_isValidEmail(e)) {
+        invalid.add(e);
+      } else if (existing.add(e)) {
+        added.add(e);
+      }
+    }
+
+    if (invalid.isNotEmpty) {
+      _showMsg('recipient', 'Invalid email: ${invalid.first}');
+      return;
+    }
+    if (added.isEmpty) {
+      _addPdfEmailController.clear();
+      _showMsg('recipient', 'Email already in list.', isError: false);
+      return;
+    }
+
+    setState(() {
+      _pdfEmails.addAll(added);
+      for (final e in added) {
+        _pdfEmailControllers.add(TextEditingController(text: e));
+      }
+      _showPdfEmails = true;
+      _addPdfEmailController.clear();
+    });
+    await StorageService.saveContacts(added, source: 'PDF');
+    _showMsg('recipient', 'Added ${added.length} email(s) to PDF list.', isError: false);
   }
 
   void _showMsg(String field, String msg, {bool isError = true}) {
@@ -2026,6 +2336,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
 
     List<String> recipients = [];
     if (_sendType == 'PDF') {
+      if (_isPdfEmailEditing && !_syncPdfEdits()) return;
       if (_pdfEmails.isEmpty) { _showMsg('recipient', 'No emails extracted from PDF.'); return; }
       recipients = _pdfEmails.toSet().toList();
     } else {
@@ -2066,7 +2377,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       if (_selectedSubject == null) { _showMsg('subject', 'Please select a saved subject.'); return; }
       if (_selectedBody == null) { _showMsg('body', 'Please select a saved body.'); return; }
     }
-    await StorageService.saveExtractedEmails(recipients);
+    await StorageService.saveContacts(recipients, source: _sendType);
 
     final dailyLimit = _sendType == 'PDF' ? (int.tryParse(_dailyLimitController.text.trim()) ?? 40) : 0;
     final newEmail = ScheduledEmail(
@@ -2683,10 +2994,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: AppTheme.bgSurface,
+                          color: AppTheme.surfaceBg(context),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: _pdfPath != null ? AppTheme.primaryBlue : AppTheme.divider,
+                            color: _pdfPath != null ? AppTheme.primaryBlue : AppTheme.border(context),
                             width: _pdfPath != null ? 2 : 1,
                           ),
                         ),
@@ -2695,7 +3006,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                             Icon(
                               _pdfPath != null ? Icons.picture_as_pdf_rounded : Icons.upload_file_rounded,
                               size: 40,
-                              color: _pdfPath != null ? AppTheme.primaryBlue : AppTheme.textLight,
+                              color: _pdfPath != null ? AppTheme.primaryBlue : AppTheme.textSecondary(context),
                             ),
                             const SizedBox(height: 10),
                             Text(
@@ -2703,16 +3014,45 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                               style: TextStyle(
                                 fontFamily: 'Inter', fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: _pdfPath != null ? AppTheme.textDark : AppTheme.textLight,
+                                color: _pdfPath != null ? AppTheme.textPrimary(context) : AppTheme.textSecondary(context),
                               ),
                             ),
                             if (_pdfEmails.isNotEmpty) ...[
                               const SizedBox(height: 6),
-                              Text('${_pdfEmails.length} emails extracted', style: const TextStyle(color: AppTheme.successGreen, fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600)),
+                              Text('${_pdfEmails.length} emails ready', style: const TextStyle(color: AppTheme.successGreen, fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600)),
                             ],
                           ],
                         ),
                       ).animate().fade().scale(),
+                    ),
+                    const SizedBox(height: 10),
+                    // Add extra email(s) into PDF recipient list
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _addPdfEmailController,
+                            keyboardType: TextInputType.emailAddress,
+                            onSubmitted: (_) => _addMorePdfEmails(),
+                            decoration: const InputDecoration(
+                              hintText: 'Add email(s) to PDF list (comma separated)',
+                              prefixIcon: Icon(Icons.person_add_alt_1_rounded, size: 18),
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: _addMorePdfEmails,
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: const Icon(Icons.add_rounded, size: 18),
+                          label: const Text('Add'),
+                        ),
+                      ],
                     ),
                     // PDF Emails panel
                     if (_pdfEmails.isNotEmpty) ...[
@@ -2722,17 +3062,17 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           decoration: BoxDecoration(
-                            color: AppTheme.successGreen.withOpacity(0.06),
+                            color: AppTheme.successGreen.withOpacity(0.08),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppTheme.successGreen.withOpacity(0.3)),
+                            border: Border.all(color: AppTheme.successGreen.withOpacity(0.32)),
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.list_alt_rounded, size: 18, color: AppTheme.successGreen),
+                              const Icon(Icons.list_alt_rounded, size: 18, color: AppTheme.successGreen),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  '${_pdfEmails.length} emails extracted â€” tap to ${_showPdfEmails ? 'hide' : 'review & edit'}',
+                                  '${_pdfEmails.length} emails in PDF list — tap to ${_showPdfEmails ? 'hide' : 'review, add or edit'}',
                                   style: const TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.successGreen),
                                 ),
                               ),
@@ -2746,28 +3086,28 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         Container(
                           height: 260,
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: AppTheme.cardBg(context),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppTheme.divider),
+                            border: Border.all(color: AppTheme.border(context)),
                             boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
                           ),
                           child: ListView.separated(
                             padding: const EdgeInsets.all(8),
                             physics: const BouncingScrollPhysics(),
                             itemCount: _isPdfEmailEditing ? _pdfEmailControllers.length : _pdfEmails.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFEEEEF5)),
+                            separatorBuilder: (_, __) => Divider(height: 1, color: AppTheme.border(context)),
                             itemBuilder: (ctx, idx) {
                               if (_isPdfEmailEditing) {
                                 return Padding(
                                   padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
                                   child: Row(
                                     children: [
-                                      Text('${idx + 1}.', style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.textLight, fontWeight: FontWeight.w600)),
+                                      Text('${idx + 1}.', style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.textSecondary(context), fontWeight: FontWeight.w600)),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: TextField(
                                           controller: _pdfEmailControllers[idx],
-                                          style: const TextStyle(fontFamily: 'Inter', fontSize: 13),
+                                          style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context)),
                                           decoration: const InputDecoration(
                                             isDense: true,
                                             contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -2789,13 +3129,13 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                                 );
                               }
                               return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                                 child: Row(
                                   children: [
                                     Container(
                                       width: 22, height: 22,
                                       decoration: BoxDecoration(
-                                        color: AppTheme.primaryBlue.withOpacity(0.08),
+                                        color: AppTheme.primaryBlue.withOpacity(0.12),
                                         shape: BoxShape.circle,
                                       ),
                                       child: Center(
@@ -2803,7 +3143,19 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                                       ),
                                     ),
                                     const SizedBox(width: 10),
-                                    Expanded(child: Text(_pdfEmails[idx], style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textDark))),
+                                    Expanded(child: Text(_pdfEmails[idx], style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context)))),
+                                    IconButton(
+                                      tooltip: 'Remove',
+                                      icon: const Icon(Icons.close_rounded, size: 16, color: AppTheme.errorRed),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () {
+                                        if (idx < _pdfEmailControllers.length) {
+                                          _pdfEmailControllers.removeAt(idx).dispose();
+                                        }
+                                        setState(() => _pdfEmails.removeAt(idx));
+                                      },
+                                    ),
                                   ],
                                 ),
                               );
@@ -2816,20 +3168,13 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                           children: [
                             if (_isPdfEmailEditing)
                               TextButton.icon(
-                                onPressed: () {
-                                  // Save edits back
-                                  setState(() {
-                                    _pdfEmails = _pdfEmailControllers.map((c) => c.text.trim()).where((e) => e.isNotEmpty).toList();
-                                    _isPdfEmailEditing = false;
-                                  });
-                                },
+                                onPressed: _syncPdfEdits,
                                 icon: const Icon(Icons.check_rounded, size: 16),
                                 label: const Text('Save Edits'),
                               )
                             else
                               TextButton.icon(
                                 onPressed: () {
-                                  // Build controllers from current emails
                                   for (var c in _pdfEmailControllers) c.dispose();
                                   _pdfEmailControllers.clear();
                                   for (final e in _pdfEmails) _pdfEmailControllers.add(TextEditingController(text: e));

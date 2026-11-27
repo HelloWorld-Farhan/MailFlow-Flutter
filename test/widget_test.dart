@@ -251,4 +251,21 @@ void main() {
         '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
     expect(DateHelpers.todayDmy(), expected);
   });
+
+  test('StorageService saves and filters contacts across Single, Multiple, and PDF sources', () async {
+    SharedPreferences.setMockInitialValues({});
+    await StorageService.saveContacts(['alice@example.com'], source: 'Single');
+    await StorageService.saveContacts(['bob@example.com', 'alice@example.com'], source: 'Multiple');
+    await StorageService.saveContacts(['carol@example.com'], source: 'PDF');
+
+    final all = await StorageService.getContactsWithSources();
+    expect(all.length, 3);
+    final alice = all.firstWhere((c) => c.email == 'alice@example.com');
+    expect(alice.sources, containsAll(['Single', 'Multiple']));
+    expect(all.where((c) => c.sources.contains('PDF')).map((c) => c.email), ['carol@example.com']);
+
+    await StorageService.deleteContact('bob@example.com');
+    final afterDelete = await StorageService.getContactsWithSources();
+    expect(afterDelete.length, 2);
+  });
 }
