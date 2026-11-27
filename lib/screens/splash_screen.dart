@@ -30,14 +30,14 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 3000),
     )..repeat();
 
-    Future.delayed(const Duration(milliseconds: 3000), () {
+    Future.delayed(const Duration(milliseconds: 1200), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (_, a, __) => const DashboardScreen(),
-            transitionsBuilder: (_, animation, __, child) =>
+            pageBuilder: (context, a, secondaryAnimation) => const DashboardScreen(),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) =>
                 FadeTransition(opacity: animation, child: child),
-            transitionDuration: const Duration(milliseconds: 600),
+            transitionDuration: const Duration(milliseconds: 500),
           ),
         );
       }
@@ -103,7 +103,7 @@ class _SplashScreenState extends State<SplashScreen>
             right: 0,
             child: AnimatedBuilder(
               animation: _waveController,
-              builder: (_, __) => CustomPaint(
+              builder: (context, child) => CustomPaint(
                 size: Size(size.width, 160),
                 painter: _WavePainter(_waveController.value),
               ),
@@ -182,7 +182,7 @@ class _SplashScreenState extends State<SplashScreen>
                 // Dot loader
                 AnimatedBuilder(
                   animation: _dotController,
-                  builder: (_, __) {
+                  builder: (context, child) {
                     return Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: List.generate(3, (i) {

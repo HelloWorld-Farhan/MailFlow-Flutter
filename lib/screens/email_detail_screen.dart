@@ -7,29 +7,7 @@ import '../services/app_config.dart';
 import '../services/backend_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
-
-String _getWeekdayString(String dateStr) {
-  if (dateStr.length != 10) return '';
-  try {
-    final parts = dateStr.split('/');
-    if (parts.length == 3) {
-      final day = int.parse(parts[0]);
-      final month = int.parse(parts[1]);
-      final year = int.parse(parts[2]);
-      final dt = DateTime(year, month, day);
-      switch (dt.weekday) {
-        case 1: return 'Monday';
-        case 2: return 'Tuesday';
-        case 3: return 'Wednesday';
-        case 4: return 'Thursday';
-        case 5: return 'Friday';
-        case 6: return 'Saturday';
-        case 7: return 'Sunday';
-      }
-    }
-  } catch (_) {}
-  return '';
-}
+import '../utils/date_helpers.dart';
 
 class EmailDetailScreen extends StatefulWidget {
   const EmailDetailScreen({Key? key}) : super(key: key);
@@ -108,18 +86,6 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
 
   // ── Quota Panel Computation ─────────────────────────────────────────────
 
-  DateTime? _parseDate(String d) {
-    if (d.length != 10) return null;
-    try {
-      int day = int.parse(d.substring(0, 2));
-      int month = int.parse(d.substring(3, 5));
-      int year = int.parse(d.substring(6, 10));
-      return DateTime(year, month, day);
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// Returns a map: senderEmail -> { dateStr -> List<(scheduleName, contribution)> }
   /// Only includes dates >= today and where at least one schedule is active (not Success/Failed)
   Map<String, Map<String, List<_DateContribution>>> _computeQuota() {
@@ -133,7 +99,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
       final sender = email.senderEmail;
 
       if (email.type == 'Single' || email.type == 'Multiple') {
-        final date = _parseDate(email.scheduledDate);
+        final date = DateHelpers.parseDmy(email.scheduledDate);
         if (date == null) continue;
         if (date.isBefore(todayNorm)) continue;
         final count = email.type == 'Single' ? 1 : email.recipients.length;
@@ -150,7 +116,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
           isMerged: email.isMerged,
         ));
       } else if (email.type == 'PDF') {
-        final startDate = _parseDate(email.scheduledDate);
+        final startDate = DateHelpers.parseDmy(email.scheduledDate);
         if (startDate == null) continue;
         final dailyLimit = email.dailyLimit > 0 ? email.dailyLimit : 40;
         final totalEmails = email.recipients.length;
@@ -205,7 +171,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
   }
 
   bool _hasOtherScheduleOnDate(String excludeId, String sender, String dateStr) {
-    final date = _parseDate(dateStr);
+    final date = DateHelpers.parseDmy(dateStr);
     if (date == null) return false;
     for (final email in _allEmails) {
       if (email.id == excludeId) continue;
@@ -214,7 +180,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
       if (email.type == 'Single' || email.type == 'Multiple') {
         if (email.scheduledDate == dateStr) return true;
       } else if (email.type == 'PDF') {
-        final eStart = _parseDate(email.scheduledDate);
+        final eStart = DateHelpers.parseDmy(email.scheduledDate);
         if (eStart == null) continue;
         final eDailyLimit = email.dailyLimit > 0 ? email.dailyLimit : 40;
         final eTotalDays = (email.recipients.length / eDailyLimit).ceil();
@@ -290,7 +256,7 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
                         color: _typeColor(email.type, email.isMerged), fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 8),
-              Expanded(child: Text('${email.scheduledDate} (${_getWeekdayString(email.scheduledDate)})  |  ${email.scheduledTime}',
+              Expanded(child: Text('${email.scheduledDate} (${DateHelpers.weekdayName(email.scheduledDate)})  |  ${email.scheduledTime}',
                   style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textLight),
                   overflow: TextOverflow.ellipsis)),
             ]),
@@ -542,8 +508,8 @@ class _EmailDetailScreenState extends State<EmailDetailScreen>
                   // Sort dates
                   final sortedDates = dateMap.keys.toList()
                     ..sort((a, b) {
-                      final dA = _parseDate(a);
-                      final dB = _parseDate(b);
+                      final dA = DateHelpers.parseDmy(a);
+                      final dB = DateHelpers.parseDmy(b);
                       if (dA == null || dB == null) return 0;
                       return dA.compareTo(dB);
                     });

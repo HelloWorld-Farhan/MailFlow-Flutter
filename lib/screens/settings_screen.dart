@@ -66,13 +66,13 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     final nameController = TextEditingController(text: editItem?.name);
     final contentController = TextEditingController(text: editItem?.content);
 
-    bool _containsHtml(String text) {
+    bool containsHtml(String text) {
       return RegExp(r'<[a-zA-Z][^>]*>').hasMatch(text);
     }
 
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         String? bodyError;
         return StatefulBuilder(
           builder: (context, setModalState) {
@@ -171,7 +171,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                             if (name.isEmpty || content.trim().isEmpty) return;
 
                             // HTML validation for Body only
-                            if (type == 'Body' && !_containsHtml(content)) {
+                            if (type == 'Body' && !containsHtml(content)) {
                               setModalState(() => bodyError = 'Body must contain valid HTML tags (e.g. <p>, <b>, <br>).');
                               return;
                             }
@@ -189,10 +189,9 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                               await StorageService.saveTemplate(template);
                             }
 
-                            if (mounted) {
-                              Navigator.pop(context);
-                              _loadTemplates();
-                            }
+                            if (!dialogContext.mounted) return;
+                            Navigator.pop(dialogContext);
+                            _loadTemplates();
                           },
                           child: Text('Save $type', style: const TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w600)),
                         ),

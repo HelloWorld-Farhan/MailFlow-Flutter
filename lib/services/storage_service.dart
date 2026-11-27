@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scheduled_email.dart';
 import '../models/template_item.dart';
+import '../utils/date_helpers.dart';
 import 'dispatcher.dart';
 
 class StorageService {
@@ -109,16 +110,11 @@ class StorageService {
   }
 
   // Global Daily Sent Limit Tracking per Sender
-  static String _todayString() {
-    final now = DateTime.now();
-    return '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
-  }
-
   static Future<Map<String, int>> getAllDailyLimits() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     final date = prefs.getString('daily_sent_date');
-    final today = _todayString();
+    final today = DateHelpers.todayDmy();
     
     if (date != today) {
       await prefs.setString('daily_sent_map', '{}');
@@ -151,16 +147,13 @@ class StorageService {
     limits[senderEmail] = current + 1;
     
     await prefs.setString('daily_sent_map', jsonEncode(limits));
-    await prefs.setString('daily_sent_date', _todayString());
+    await prefs.setString('daily_sent_date', DateHelpers.todayDmy());
   }
 
-  // ── OAuth Access Token Storage (per sender) ────────────────────────────
-  // Saved when user signs in via UI, read by background dispatcher.
-  // Key: 'access_token_<email>'
+  // OAuth Access Token Storage (per sender)
   static Future<void> saveAccessToken(String email, String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('access_token_$email', token);
-    print('StorageService: Saved access token for $email');
   }
 
   static Future<String?> getAccessToken(String email) async {

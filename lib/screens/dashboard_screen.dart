@@ -11,6 +11,7 @@ import '../models/scheduled_email.dart';
 import '../services/app_config.dart';
 import '../services/backend_service.dart';
 import '../services/storage_service.dart';
+import '../utils/date_helpers.dart';
 import '../utils/date_input_formatter.dart';
 import '../utils/time_input_formatter.dart';
 import '../utils/pdf_parser.dart';
@@ -33,29 +34,6 @@ class DashboardScreen extends StatefulWidget {
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
-}
-
-String _getWeekdayString(String dateStr) {
-  if (dateStr.length != 10) return '';
-  try {
-    final parts = dateStr.split('/');
-    if (parts.length == 3) {
-      final day = int.parse(parts[0]);
-      final month = int.parse(parts[1]);
-      final year = int.parse(parts[2]);
-      final dt = DateTime(year, month, day);
-      switch (dt.weekday) {
-        case 1: return 'Monday';
-        case 2: return 'Tuesday';
-        case 3: return 'Wednesday';
-        case 4: return 'Thursday';
-        case 5: return 'Friday';
-        case 6: return 'Saturday';
-        case 7: return 'Sunday';
-      }
-    }
-  } catch (_) {}
-  return '';
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
@@ -123,8 +101,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadHistory() async {
     if (AppConfig.isBackendEnabled) {
       try {
-        final history = await BackendService.fetchCampaigns();
-        final limitsMap = await BackendService.fetchDailyLimits();
+        final (history, limitsMap) = await (
+          BackendService.fetchCampaigns(),
+          BackendService.fetchDailyLimits(),
+        ).wait;
         final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
         if (!mounted) return;
         setState(() {
@@ -140,8 +120,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-    final history = await StorageService.getEmails();
-    final limitsMap = await StorageService.getAllDailyLimits();
+    final (history, limitsMap) = await (
+      StorageService.getEmails(),
+      StorageService.getAllDailyLimits(),
+    ).wait;
     final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
     
     if (!mounted) return;
@@ -1339,6 +1321,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     _senderController.dispose();
     _scheduleNameController.dispose();
     for (var c in _emailControllers) c.dispose();
+    for (var c in _pdfEmailControllers) c.dispose();
     _subjectController.dispose();
     _bodyController.dispose();
     _dailyLimitController.dispose();
@@ -1464,35 +1447,10 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     ).animate().fade().slideY(begin: -0.2, end: 0);
   }
 
-  DateTime? _parseDate(String d) {
-    if (d.length != 10) return null;
-    try {
-      int day = int.parse(d.substring(0, 2));
-      int month = int.parse(d.substring(3, 5));
-      int year = int.parse(d.substring(6, 10));
-      return DateTime(year, month, day);
-    } catch (_) { return null; }
-  }
-
-  bool _isDateTimeValid(String d, String t, bool am) {
-    if (d.length != 10 || t.length != 5) return false;
-    try {
-      int day = int.parse(d.substring(0, 2));
-      int month = int.parse(d.substring(3, 5));
-      int year = int.parse(d.substring(6, 10));
-      int hour = int.parse(t.substring(0, 2));
-      int minute = int.parse(t.substring(3, 5));
-      if (!am && hour != 12) hour += 12;
-      if (am && hour == 12) hour = 0;
-      return DateTime(year, month, day, hour, minute).isAfter(DateTime.now());
-    } catch (_) { return false; }
-  }
-
-
   Future<void> _submit() async {
     final sender = _senderController.text.trim();
     if (!_isValidEmail(sender) || !_isAuthenticated) { _showMsg('sender', 'Authenticate a valid sender email first.'); return; }
-    if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _showMsg('date', 'Enter a valid future date and time.'); return; }
+    if (!DateHelpers.isFutureDmyTime(_dateController.text, _timeController.text, _isAm)) { _showMsg('date', 'Enter a valid future date and time.'); return; }
 
     // Prevent scheduling if the sender has ALREADY hit 50 emails sent today
     if (_currentSenderUsage >= 50) {
@@ -1599,7 +1557,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     final allEmails = AppConfig.isBackendEnabled
         ? await BackendService.fetchCampaigns()
         : await StorageService.getEmails();
-    final startDate = _parseDate(newPdf.scheduledDate);
+    final startDate = DateHelpers.parseDmy(newPdf.scheduledDate);
     if (startDate == null) return null;
     final dailyLimit = newPdf.dailyLimit > 0 ? newPdf.dailyLimit : 40;
     final totalDays = (newPdf.recipients.length / dailyLimit).ceil();
@@ -1613,7 +1571,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
         if (e.type != 'PDF' && e.type != 'Merged') continue;
         if (e.id == newPdf.id) continue;
 
-        final eStart = _parseDate(e.scheduledDate);
+        final eStart = DateHelpers.parseDmy(e.scheduledDate);
         if (eStart == null) continue;
         final eDailyLimit = e.dailyLimit > 0 ? e.dailyLimit : 40;
         final eTotalDays = (e.recipients.length / eDailyLimit).ceil();
@@ -1650,7 +1608,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     final allocB = dailyLimit - allocA;
 
     // Queue: new PDF starts after existing PDF finishes
-    final eStart = _parseDate(conflictingPdf.scheduledDate);
+    final eStart = DateHelpers.parseDmy(conflictingPdf.scheduledDate);
     final eDailyLimit = conflictingPdf.dailyLimit > 0 ? conflictingPdf.dailyLimit : 40;
     final eTotalDays = eStart != null ? ((conflictingPdf.recipients.length - conflictingPdf.sentCount) / eDailyLimit).ceil() : 0;
     final queueStartDate = eStart?.add(Duration(days: eTotalDays));
@@ -1827,9 +1785,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       Expanded(
                         child: Text(
                           widget.editEmail != null ? 'Edit Schedule' : (() {
-                            final n = DateTime.now();
-                            final d = '${n.day.toString().padLeft(2, '0')}/${n.month.toString().padLeft(2, '0')}/${n.year}';
-                            return 'New Schedule  $d (${_getWeekdayString(d)})';
+                            final d = DateHelpers.todayDmy();
+                            return 'New Schedule  $d (${DateHelpers.weekdayName(d)})';
                           })(),
                           style: TextStyle(fontFamily: 'Outfit', fontSize: widget.editEmail != null ? 22 : 16, fontWeight: FontWeight.w700, color: AppTheme.textDark),
                         ),
@@ -2497,7 +2454,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                         child: ValueListenableBuilder<TextEditingValue>(
                           valueListenable: _dateController,
                           builder: (context, value, child) {
-                            final weekdayStr = _getWeekdayString(value.text);
+                            final weekdayStr = DateHelpers.weekdayName(value.text);
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -2668,20 +2625,6 @@ class _ResendModalState extends State<_ResendModal> {
     super.dispose();
   }
 
-  bool _isDateTimeValid(String d, String t, bool am) {
-    if (d.length != 10 || t.length != 5) return false;
-    try {
-      int day = int.parse(d.substring(0, 2));
-      int month = int.parse(d.substring(3, 5));
-      int year = int.parse(d.substring(6, 10));
-      int hour = int.parse(t.substring(0, 2));
-      int minute = int.parse(t.substring(3, 5));
-      if (!am && hour != 12) hour += 12;
-      if (am && hour == 12) hour = 0;
-      return DateTime(year, month, day, hour, minute).isAfter(DateTime.now());
-    } catch (_) { return false; }
-  }
-
   void _showMsg(String msg, {bool isError = true}) {
     if (!mounted) return;
     setState(() {
@@ -2715,7 +2658,7 @@ class _ResendModalState extends State<_ResendModal> {
   }
 
   Future<void> _submit() async {
-    if (!_isDateTimeValid(_dateController.text, _timeController.text, _isAm)) { _showMsg('Enter a valid future date and time.'); return; }
+    if (!DateHelpers.isFutureDmyTime(_dateController.text, _timeController.text, _isAm)) { _showMsg('Enter a valid future date and time.'); return; }
     
     final originalName = widget.email.scheduleName ?? 'Resend Schedule';
     final resendName = originalName.contains('(Resend)') ? originalName : '$originalName (Resend)';
@@ -2804,7 +2747,7 @@ class _ResendModalState extends State<_ResendModal> {
                         child: ValueListenableBuilder<TextEditingValue>(
                           valueListenable: _dateController,
                           builder: (context, value, child) {
-                            final weekdayStr = _getWeekdayString(value.text);
+                            final weekdayStr = DateHelpers.weekdayName(value.text);
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [

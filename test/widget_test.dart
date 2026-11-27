@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +7,9 @@ import 'package:mailflow/services/app_config.dart';
 import 'package:mailflow/services/backend_service.dart';
 import 'package:mailflow/theme/app_theme.dart';
 import 'package:mailflow/services/update_service.dart';
+import 'package:mailflow/utils/date_helpers.dart';
+import 'package:mailflow/utils/pdf_parser.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 void main() {
   test('UpdateService release parser parses Android APK and Windows EXE assets', () {
@@ -59,6 +63,27 @@ void main() {
     expect(am, DateTime(2026, 11, 27, 0, 5));
     expect(pm, DateTime(2026, 11, 27, 14, 30));
     expect(BackendService.parseScheduleDateTime('invalid', '10:00 AM'), isNull);
+  });
+
+  test('DateHelpers validates dates, weekdays, and future schedules', () {
+    expect(DateHelpers.formatDmy(DateTime(2026, 11, 27)), '27/11/2026');
+    expect(DateHelpers.weekdayName('27/11/2026'), 'Friday');
+    expect(DateHelpers.parseDmy('31/02/2026'), isNull);
+    expect(DateHelpers.isFutureDmyTime('27/11/2099', '09:15', true), isTrue);
+    expect(DateHelpers.isFutureDmyTime('01/01/2020', '09:15', true), isFalse);
+  });
+
+  test('PdfParser extracts unique lowercase emails in background isolate', () async {
+    final doc = PdfDocument();
+    doc.pages.add().graphics.drawString(
+      'Contact Alice@Example.com and bob@test.org or alice@example.com',
+      PdfStandardFont(PdfFontFamily.helvetica, 12),
+    );
+    final bytes = await doc.save();
+    doc.dispose();
+
+    final emails = await PdfParser.extractEmailsFromPdfBytes(Uint8List.fromList(bytes));
+    expect(emails, unorderedEquals(['alice@example.com', 'bob@test.org']));
   });
 
   testWidgets('AppTheme light theme initializes properly', (WidgetTester tester) async {

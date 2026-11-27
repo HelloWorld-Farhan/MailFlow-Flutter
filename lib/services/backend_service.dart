@@ -4,10 +4,12 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/scheduled_email.dart';
+import '../utils/date_helpers.dart';
 import 'app_config.dart';
 
 /// Client for MailFlow Cloudflare Worker API, Supabase REST, and Supabase Realtime.
 class BackendService {
+  static final http.Client _client = http.Client();
   static final StreamController<void> _changesController =
       StreamController<void>.broadcast();
   static Stream<void> get onDataChanged => _changesController.stream;
@@ -32,25 +34,39 @@ class BackendService {
 
   /// Parses `DD/MM/YYYY` + `HH:MM AM/PM` into a local DateTime.
   static DateTime? parseScheduleDateTime(String dateStr, String timeStr) {
-    final dParts = dateStr.split('/');
     final tParts = timeStr.trim().split(' ');
-    if (dParts.length != 3 || tParts.length != 2) return null;
-    final hm = tParts[0].split(':');
-    if (hm.length != 2) return null;
-
-    final day = int.tryParse(dParts[0]);
-    final month = int.tryParse(dParts[1]);
-    final year = int.tryParse(dParts[2]);
-    var hour = int.tryParse(hm[0]);
-    final minute = int.tryParse(hm[1]);
-    if (day == null || month == null || year == null || hour == null || minute == null) {
+    if (DateHelpers.parseDmy(dateStr) == null || tParts.length != 2) return null;
+    try {
+      return DateHelpers.parseScheduleDateTime(dateStr, timeStr);
+    } catch (_) {
       return null;
     }
+  }
 
-    final ampm = tParts[1].toUpperCase();
-    if (ampm == 'PM' && hour < 12) hour += 12;
-    if (ampm == 'AM' && hour == 12) hour = 0;
-    return DateTime(year, month, day, hour, minute);
+  static Future<Map<String, dynamic>> _sendWorkerRequest(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    Duration timeout = const Duration(seconds: 15),
+    Set<int> okStatuses = const {200},
+    String errorLabel = 'Request failed',
+  }) async {
+    final uri = Uri.parse('${AppConfig.backendApiUrl}$path');
+    final encoded = body != null ? jsonEncode(body) : null;
+    final Future<http.Response> req;
+    if (method == 'GET') {
+      req = _client.get(uri, headers: _workerHeaders);
+    } else if (method == 'DELETE') {
+      req = _client.delete(uri, headers: _workerHeaders);
+    } else {
+      req = _client.post(uri, headers: _workerHeaders, body: encoded);
+    }
+    final res = await req.timeout(timeout);
+    if (!okStatuses.contains(res.statusCode)) {
+      throw Exception('$errorLabel (${res.statusCode}): ${res.body}');
+    }
+    if (res.body.isEmpty) return {};
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   /// Verifies the deployed Worker `/health` endpoint.
@@ -58,28 +74,23 @@ class BackendService {
     if (!AppConfig.isBackendEnabled) {
       throw Exception('Backend URL or secrets are not configured.');
     }
-    final res = await http
-        .get(Uri.parse('${AppConfig.backendApiUrl}/health'), headers: _workerHeaders)
-        .timeout(const Duration(seconds: 12));
-    if (res.statusCode != 200) {
-      throw Exception('Health check failed (${res.statusCode}): ${res.body}');
-    }
-    return jsonDecode(res.body) as Map<String, dynamic>;
+    return _sendWorkerRequest(
+      'GET',
+      '/health',
+      timeout: const Duration(seconds: 12),
+      errorLabel: 'Health check failed',
+    );
   }
 
   /// Sends Google `serverAuthCode` to Worker `/oauth/exchange` to store an encrypted refresh token.
   static Future<String> exchangeServerAuthCode(String serverAuthCode) async {
-    final res = await http
-        .post(
-          Uri.parse('${AppConfig.backendApiUrl}/oauth/exchange'),
-          headers: _workerHeaders,
-          body: jsonEncode({'serverAuthCode': serverAuthCode}),
-        )
-        .timeout(const Duration(seconds: 20));
-    if (res.statusCode != 200) {
-      throw Exception('OAuth exchange failed (${res.statusCode}): ${res.body}');
-    }
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final data = await _sendWorkerRequest(
+      'POST',
+      '/oauth/exchange',
+      body: {'serverAuthCode': serverAuthCode},
+      timeout: const Duration(seconds: 20),
+      errorLabel: 'OAuth exchange failed',
+    );
     return (data['senderEmail'] ?? '').toString();
   }
 
@@ -114,52 +125,35 @@ class BackendService {
         },
     };
 
-    final res = await http
-        .post(
-          Uri.parse('${AppConfig.backendApiUrl}/campaigns'),
-          headers: _workerHeaders,
-          body: jsonEncode(payload),
-        )
-        .timeout(const Duration(seconds: 30));
-    if (res.statusCode != 201 && res.statusCode != 200) {
-      throw Exception('Schedule failed (${res.statusCode}): ${res.body}');
-    }
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final data = await _sendWorkerRequest(
+      'POST',
+      '/campaigns',
+      body: payload,
+      timeout: const Duration(seconds: 30),
+      okStatuses: const {200, 201},
+      errorLabel: 'Schedule failed',
+    );
     _changesController.add(null);
     return (data['campaignId'] ?? '').toString();
   }
 
   static Future<void> pauseCampaign(String id) async {
-    final res = await http
-        .post(Uri.parse('${AppConfig.backendApiUrl}/campaigns/$id/pause'), headers: _workerHeaders)
-        .timeout(const Duration(seconds: 15));
-    if (res.statusCode != 200) {
-      throw Exception('Pause failed (${res.statusCode}): ${res.body}');
-    }
+    await _sendWorkerRequest('POST', '/campaigns/$id/pause', errorLabel: 'Pause failed');
     _changesController.add(null);
   }
 
   static Future<void> resumeCampaign(String id, {bool forceWeekend = false}) async {
-    final res = await http
-        .post(
-          Uri.parse('${AppConfig.backendApiUrl}/campaigns/$id/resume'),
-          headers: _workerHeaders,
-          body: jsonEncode({'forceWeekend': forceWeekend}),
-        )
-        .timeout(const Duration(seconds: 15));
-    if (res.statusCode != 200) {
-      throw Exception('Resume failed (${res.statusCode}): ${res.body}');
-    }
+    await _sendWorkerRequest(
+      'POST',
+      '/campaigns/$id/resume',
+      body: {'forceWeekend': forceWeekend},
+      errorLabel: 'Resume failed',
+    );
     _changesController.add(null);
   }
 
   static Future<void> deleteCampaign(String id) async {
-    final res = await http
-        .delete(Uri.parse('${AppConfig.backendApiUrl}/campaigns/$id'), headers: _workerHeaders)
-        .timeout(const Duration(seconds: 15));
-    if (res.statusCode != 200) {
-      throw Exception('Delete failed (${res.statusCode}): ${res.body}');
-    }
+    await _sendWorkerRequest('DELETE', '/campaigns/$id', errorLabel: 'Delete failed');
     _changesController.add(null);
   }
 
@@ -173,7 +167,7 @@ class BackendService {
       'email_jobs(recipient_email,status,error_message)'
       '&order=created_at.desc',
     );
-    final res = await http.get(uri, headers: _supabaseHeaders).timeout(const Duration(seconds: 15));
+    final res = await _client.get(uri, headers: _supabaseHeaders).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       throw Exception('Failed to load campaigns (${res.statusCode}): ${res.body}');
     }
@@ -189,7 +183,7 @@ class BackendService {
     final uri = Uri.parse(
       '${AppConfig.supabaseUrl}/rest/v1/daily_usage?select=sender_email,sent_count&usage_date=eq.$ymd',
     );
-    final res = await http.get(uri, headers: _supabaseHeaders).timeout(const Duration(seconds: 15));
+    final res = await _client.get(uri, headers: _supabaseHeaders).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       throw Exception('Failed to load daily usage (${res.statusCode}): ${res.body}');
     }
