@@ -98,7 +98,7 @@ class BackendService {
       'body': email.body,
       'recipients': email.recipients,
       'startAtIso': startLocal.toUtc().toIso8601String(),
-      'dailyLimit': email.dailyLimit > 0 ? email.dailyLimit : 50,
+      'dailyLimit': email.dailyLimit > 0 ? email.dailyLimit : (email.type == 'PDF' ? 40 : 50),
       'delayMinutes': email.delayMinutes,
       'forceWeekend': email.forceWeekend,
       'queuedAfter': email.queuedAfter,

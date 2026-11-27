@@ -1522,9 +1522,9 @@ class _ScheduleModalState extends State<_ScheduleModal> {
     
     if (_sendType == 'PDF') {
       final inputLimit = int.tryParse(_dailyLimitController.text.trim()) ?? 0;
-      if (inputLimit > 50) {
+      if (inputLimit < 1 || inputLimit > 50) {
         setState(() {
-          _dailyLimitMsg = 'Max limit is 50.';
+          _dailyLimitMsg = inputLimit < 1 ? 'Enter at least 1 email per day.' : 'Max limit is 50.';
           _isDailyLimitErr = true;
         });
         Future.delayed(const Duration(seconds: 3), () {
