@@ -84,22 +84,37 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _onSecondTick() {
     if (!mounted || _history.isEmpty) return;
     final now = DateTime.now();
+    final activeList = _history.where((e) => SendNotificationMonitor.isActiveStatus(e.status)).toList();
     bool hasLiveWork = false;
     bool shouldDispatch = false;
 
     for (final item in _history) {
       if (SendNotificationMonitor.isActiveStatus(item.status)) {
         hasLiveWork = true;
-        if (now.second % 10 == 0) shouldDispatch = true;
+        final nextAt = item.nextSendAt;
+        final nextSec = nextAt != null ? nextAt.difference(now).inSeconds : null;
+        if (nextSec != null && nextSec <= 0) {
+          shouldDispatch = true;
+        } else if (now.second % 10 == 0) {
+          shouldDispatch = true;
+        }
+        NotificationService.showSendingProgressNotification(
+          item,
+          parallelCount: activeList.length,
+          nextSendInSec: nextSec != null && nextSec > 0 ? nextSec : null,
+        );
       } else if (item.status == 'Scheduled') {
         final startDt = BackendService.parseScheduleDateTime(item.scheduledDate, item.scheduledTime);
         if (startDt != null) {
           final diffSec = startDt.difference(now).inSeconds;
           if (diffSec <= 60 && diffSec > 0) {
             hasLiveWork = true;
-            if (_preStartNotifiedIds.add(item.id)) {
-              NotificationService.showPreStartCountdownNotification(item, diffSec);
-            }
+            final isFirst = _preStartNotifiedIds.add(item.id);
+            NotificationService.showPreStartCountdownNotification(
+              item,
+              diffSec,
+              silent: !isFirst,
+            );
           } else if (diffSec <= 0 && diffSec >= -120) {
             hasLiveWork = true;
             shouldDispatch = true;
@@ -115,7 +130,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       }
       if (shouldDispatch) {
         final last = _lastTickDispatchAt;
-        if (last == null || now.difference(last).inSeconds >= 5) {
+        if (last == null || now.difference(last).inSeconds >= 4) {
           _lastTickDispatchAt = now;
           BackendService.triggerTick().catchError((_) => <String, dynamic>{});
         }
@@ -396,15 +411,26 @@ class _DashboardScreenState extends State<DashboardScreen>
     // Compute summary metrics & active list in a single O(N) pass.
     int scheduledCount = 0;
     int sentCount = 0;
+    final now = DateTime.now();
     final active = <ScheduledEmail>[];
+    final preStart = <ScheduledEmail>[];
     for (final e in _history) {
       if (e.status == 'Success') {
         sentCount++;
       } else {
         if (!e.status.startsWith('Failed')) scheduledCount++;
-        if (SendNotificationMonitor.isActiveStatus(e.status)) active.add(e);
+        if (SendNotificationMonitor.isActiveStatus(e.status)) {
+          active.add(e);
+        } else if (e.status == 'Scheduled') {
+          final dt = BackendService.parseScheduleDateTime(e.scheduledDate, e.scheduledTime);
+          if (dt != null) {
+            final diff = dt.difference(now).inSeconds;
+            if (diff <= 60 && diff >= -60) preStart.add(e);
+          }
+        }
       }
     }
+    final liveItems = [...active, ...preStart];
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg(context),
@@ -740,7 +766,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
 
           // ── In-App Live Sending / Parallel Activity Notification Hub ─────
-          if (active.isNotEmpty || _latestAlert != null)
+          if (liveItems.isNotEmpty || _latestAlert != null)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -752,11 +778,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                         onTap: () => _showEmailDetails(_latestAlert!.email),
                         onDismiss: () => setState(() => _latestAlert = null),
                       ),
-                    if (_latestAlert != null && active.isNotEmpty)
+                    if (_latestAlert != null && liveItems.isNotEmpty)
                       const SizedBox(height: 10),
-                    if (active.isNotEmpty)
+                    if (liveItems.isNotEmpty)
                       _LiveParallelSendingPanel(
-                        activeCampaigns: active,
+                        activeCampaigns: liveItems,
+                        nowNotifier: _nowNotifier,
                         onTapCampaign: _showEmailDetails,
                       ),
                   ],
@@ -764,7 +791,8 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
 
-          // ── Header hero card ──────────────────────────────────────────
+          // ── Header hero card (hidden while live sending/countdown is on top) ──
+          if (liveItems.isEmpty)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
@@ -1026,9 +1054,11 @@ class _RealtimeEventBanner extends StatelessWidget {
 
 class _LiveParallelSendingPanel extends StatelessWidget {
   final List<ScheduledEmail> activeCampaigns;
+  final ValueNotifier<DateTime> nowNotifier;
   final void Function(ScheduledEmail) onTapCampaign;
   const _LiveParallelSendingPanel({
     required this.activeCampaigns,
+    required this.nowNotifier,
     required this.onTapCampaign,
   });
 
@@ -1038,133 +1068,159 @@ class _LiveParallelSendingPanel extends StatelessWidget {
     final totalSent = activeCampaigns.fold<int>(0, (s, e) => s + e.sentCount);
     final totalRecipients = activeCampaigns.fold<int>(0, (s, e) => s + e.recipients.length);
 
-    return GlassContainer(
-      borderRadius: 18,
-      blurSigma: 16,
-      padding: const EdgeInsets.all(14),
-      color: AppTheme.primaryBlue.withValues(alpha: 0.08),
-      borderColor: AppTheme.primaryBlue.withValues(alpha: 0.30),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return ValueListenableBuilder<DateTime>(
+      valueListenable: nowNotifier,
+      builder: (context, now, _) {
+        return GlassContainer(
+          borderRadius: 18,
+          blurSigma: 16,
+          padding: const EdgeInsets.all(14),
+          color: AppTheme.primaryBlue.withValues(alpha: 0.08),
+          borderColor: AppTheme.primaryBlue.withValues(alpha: 0.30),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: const BoxDecoration(
-                  color: AppTheme.successGreen,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  isParallel
-                      ? '${activeCampaigns.length} Parallel Dispatches Running Live'
-                      : 'Sending Live in Real Time',
-                  style: const TextStyle(
-                    fontFamily: 'Outfit',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textDark,
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      color: AppTheme.successGreen,
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryBlue,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '$totalSent / $totalRecipients sent',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isParallel
+                          ? '${activeCampaigns.length} Parallel Schedules Live'
+                          : 'Live Schedule Status',
+                      style: TextStyle(
+                        fontFamily: 'Outfit',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary(context),
+                      ),
+                    ),
                   ),
-                ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryBlue,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$totalSent / $totalRecipients sent',
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ...activeCampaigns.map((item) {
-            final total = item.recipients.length;
-            final sent = item.sentCount.clamp(0, total);
-            final ratio = total > 0 ? sent / total : 0.0;
-            final current = SendNotificationMonitor.currentRecipient(item);
-            final title = (item.scheduleName != null && item.scheduleName!.trim().isNotEmpty)
-                ? item.scheduleName!
-                : (item.subject.isNotEmpty ? item.subject : item.senderEmail);
-            return InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => onTapCampaign(item),
-              child: Padding(
-                padding: const EdgeInsets.only(top: 6, bottom: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              const SizedBox(height: 10),
+              ...activeCampaigns.map((item) {
+                final total = item.recipients.length;
+                final sent = item.sentCount.clamp(0, total);
+                final ratio = total > 0 ? sent / total : 0.0;
+                final current = SendNotificationMonitor.currentRecipient(item);
+                final title = (item.scheduleName != null && item.scheduleName!.trim().isNotEmpty)
+                    ? item.scheduleName!
+                    : (item.subject.isNotEmpty ? item.subject : item.senderEmail);
+                String timerNote = '';
+                if (item.status == 'Scheduled') {
+                  final dt = BackendService.parseScheduleDateTime(item.scheduledDate, item.scheduledTime);
+                  final diff = dt != null ? dt.difference(now).inSeconds : 0;
+                  timerNote = diff > 0 ? 'Starting in ${diff}s' : 'Starting now...';
+                } else if (item.nextSendAt != null) {
+                  final nextSec = item.nextSendAt!.difference(now).inSeconds;
+                  if (nextSec > 0) timerNote = 'Next in ${nextSec}s';
+                }
+                return InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => onTapCampaign(item),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            '$title  •  ${item.senderEmail}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppTheme.textDark,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '$title  •  ${item.senderEmail}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.textPrimary(context),
+                                ),
+                              ),
+                            ),
+                            if (timerNote.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                timerNote,
+                                style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.warningAmber,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(width: 8),
+                            Text(
+                              '$sent/$total',
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.primaryBlue,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (current != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              'Sending to $current...',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 11,
+                                color: AppTheme.textSecondary(context),
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '$sent/$total',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.primaryBlue,
+                        const SizedBox(height: 5),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: ratio > 0 ? ratio : null,
+                            backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.14),
+                            valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
+                            minHeight: 4,
                           ),
                         ),
                       ],
                     ),
-                    if (current != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          'Sending to $current...',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
-                            fontSize: 11,
-                            color: AppTheme.textMid,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 5),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: ratio > 0 ? ratio : null,
-                        backgroundColor: AppTheme.primaryBlue.withOpacity(0.14),
-                        valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
-                        minHeight: 4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-        ],
-      ),
-    ).animate().fade(duration: 250.ms);
+                  ),
+                );
+              }),
+            ],
+          ),
+        ).animate().fade(duration: 250.ms);
+      },
+    );
   }
 }
 
@@ -1826,22 +1882,42 @@ class _CountdownBanner extends StatelessWidget {
         }
 
         if (SendNotificationMonitor.isActiveStatus(item.status) && item.delayMinutes > 0) {
-          final sec = 60 - now.second;
-          final mm = (sec ~/ 60).toString().padLeft(2, '0');
-          final ss = (sec % 60).toString().padLeft(2, '0');
+          final nextAt = item.nextSendAt;
+          final rawSec = nextAt != null
+              ? nextAt.difference(now).inSeconds.clamp(0, item.delayMinutes * 60)
+              : (60 - now.second);
+          final totalGapSec = item.delayMinutes * 60;
+          final pct = totalGapSec > 0 ? ((totalGapSec - rawSec) / totalGapSec).clamp(0.0, 1.0) : 0.0;
           return Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.bolt_rounded, size: 14, color: AppTheme.primaryBlue),
-                const SizedBox(width: 4),
-                Text(
-                  'Live sending (${item.delayMinutes}m interval • sync in $mm:$ss)',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.primaryBlue,
+                Row(
+                  children: [
+                    const Icon(Icons.bolt_rounded, size: 14, color: AppTheme.primaryBlue),
+                    const SizedBox(width: 4),
+                    Text(
+                      rawSec > 0
+                          ? 'Next email in ${rawSec}s (${item.delayMinutes}m gap)'
+                          : 'Sending next email now...',
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.primaryBlue,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: rawSec > 0 ? pct : null,
+                    backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.14),
+                    valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
+                    minHeight: 4,
                   ),
                 ),
               ],
@@ -1897,154 +1973,172 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                 ? AppTheme.errorRed
                 : (isActive ? AppTheme.primaryBlue : AppTheme.warningAmber));
 
+        final startDt = BackendService.parseScheduleDateTime(email.scheduledDate, email.scheduledTime);
+        final isPreStart = email.status == 'Scheduled' &&
+            startDt != null &&
+            startDt.difference(DateTime.now()).inSeconds <= 60;
+        final isRunningOrStarting = isActive || isPreStart;
+
         return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 28),
           backgroundColor: AppTheme.cardBg(context),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
             side: BorderSide(
-              color: isActive
+              color: isRunningOrStarting
                   ? AppTheme.primaryBlue.withValues(alpha: 0.35)
                   : AppTheme.border(context),
             ),
           ),
           elevation: 8,
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              (email.scheduleName != null && email.scheduleName!.isNotEmpty)
-                                  ? email.scheduleName!
-                                  : 'Schedule Details',
-                              style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
-                            ),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.primaryBlue.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    email.isMerged ? 'Merged PDF' : email.type,
-                                    style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    email.status,
-                                    style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: statusColor, fontWeight: FontWeight.w700),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 420,
+              maxHeight: MediaQuery.of(context).size.height * 0.72,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Status bar at top of popup
+                    if (widget.nowNotifier != null)
+                      _CountdownBanner(item: email, nowNotifier: widget.nowNotifier!),
+                    if (isActive && total > 0) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Live Sending Progress',
+                            style: TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primaryBlue),
+                          ),
+                          Text(
+                            '$sent / $total (${(progress * 100).toStringAsFixed(0)}%)',
+                            style: const TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: LinearProgressIndicator(
+                          value: progress > 0 ? progress : null,
+                          backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.14),
+                          valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
+                          minHeight: 6,
                         ),
                       ),
-                      IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
                     ],
-                  ),
-                  if (widget.nowNotifier != null)
-                    _CountdownBanner(item: email, nowNotifier: widget.nowNotifier!),
-                  if (isActive && total > 0) ...[
-                    const SizedBox(height: 14),
+                    if (isRunningOrStarting) const SizedBox(height: 14),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Live Sending Progress',
-                          style: TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primaryBlue),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                (email.scheduleName != null && email.scheduleName!.isNotEmpty)
+                                    ? email.scheduleName!
+                                    : 'Schedule Details',
+                                style: TextStyle(fontFamily: 'Outfit', fontSize: 19, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primaryBlue.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      email.isMerged ? 'Merged PDF' : email.type,
+                                      style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      email.status,
+                                      style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: statusColor, fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                        Text(
-                          '$sent / $total (${(progress * 100).toStringAsFixed(0)}%)',
-                          style: const TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
-                        ),
+                        IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: LinearProgressIndicator(
-                        value: progress > 0 ? progress : null,
-                        backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.14),
-                        valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
-                        minHeight: 6,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  _infoRow(Icons.account_circle_outlined, 'Sender', email.senderEmail),
-                  if (email.createdAt != null)
-                    _infoRow(Icons.add_task_rounded, 'Created On', email.createdAt!),
-                  Builder(builder: (context) {
-                    final wd = DateHelpers.weekdayName(email.scheduledDate);
-                    final suffix = wd.isNotEmpty ? ' ($wd)' : '';
-                    return _infoRow(Icons.calendar_today_rounded, 'Date', '${email.scheduledDate}$suffix');
-                  }),
-              _infoRow(Icons.access_time_rounded, 'Time', email.scheduledTime),
-              if (email.type == 'PDF' || email.isMerged)
-                _infoRow(Icons.speed_rounded, 'Daily Limit', '${email.dailyLimit > 0 ? email.dailyLimit : 40} emails / day'),
-              if (email.type == 'Multiple' || email.type == 'PDF' || email.isMerged)
-                _infoRow(Icons.timer_outlined, 'Delay', '${email.delayMinutes} min between emails'),
-              _infoRow(Icons.subject_rounded, 'Subject', email.subject.isEmpty ? '(No Subject)' : email.subject),
-              const SizedBox(height: 8),
-              // Collapsible Body Section
-              GestureDetector(
-                onTap: () => setState(() => _showBody = !_showBody),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceBg(context),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.border(context)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.article_outlined, size: 18, color: AppTheme.primaryBlue),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          'Body',
-                          style: TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
+                    const SizedBox(height: 14),
+                    _infoRow(Icons.account_circle_outlined, 'Sender', email.senderEmail),
+                    if (!isRunningOrStarting) ...[
+                      if (email.createdAt != null)
+                        _infoRow(Icons.add_task_rounded, 'Created On', email.createdAt!),
+                      Builder(builder: (context) {
+                        final wd = DateHelpers.weekdayName(email.scheduledDate);
+                        final suffix = wd.isNotEmpty ? ' ($wd)' : '';
+                        return _infoRow(Icons.calendar_today_rounded, 'Date', '${email.scheduledDate}$suffix');
+                      }),
+                      _infoRow(Icons.access_time_rounded, 'Time', email.scheduledTime),
+                      if (email.type == 'PDF' || email.isMerged)
+                        _infoRow(Icons.speed_rounded, 'Daily Limit', '${email.dailyLimit > 0 ? email.dailyLimit : 40} emails / day'),
+                    ],
+                    if (email.type == 'Multiple' || email.type == 'PDF' || email.isMerged)
+                      _infoRow(Icons.timer_outlined, 'Delay', '${email.delayMinutes} min between emails'),
+                    if (!isRunningOrStarting) ...[
+                      _infoRow(Icons.subject_rounded, 'Subject', email.subject.isEmpty ? '(No Subject)' : email.subject),
+                      const SizedBox(height: 8),
+                      // Collapsible Body Section
+                      GestureDetector(
+                        onTap: () => setState(() => _showBody = !_showBody),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceBg(context),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppTheme.border(context)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.article_outlined, size: 18, color: AppTheme.primaryBlue),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  'Body',
+                                  style: TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
+                                ),
+                              ),
+                              Icon(
+                                _showBody ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                                color: AppTheme.textSecondary(context), size: 20,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      Icon(
-                        _showBody ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                        color: AppTheme.textSecondary(context), size: 20,
-                      ),
+                      if (_showBody) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(color: AppTheme.surfaceBg(context), borderRadius: BorderRadius.circular(12)),
+                          child: Text(email.body.isEmpty ? '(Empty body)' : email.body, style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textPrimary(context))),
+                        ),
+                      ],
                     ],
-                  ),
-                ),
-              ),
-              if (_showBody) ...[
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: AppTheme.surfaceBg(context), borderRadius: BorderRadius.circular(12)),
-                  child: Text(email.body.isEmpty ? '(Empty body)' : email.body, style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textPrimary(context))),
-                ),
-              ],
-              const SizedBox(height: 16),
+                    const SizedBox(height: 12),
               // Collapsible Recipients Section
               GestureDetector(
                 onTap: () => setState(() => _showRecipients = !_showRecipients),
@@ -2128,6 +2222,7 @@ class _DetailsDialogState extends State<_DetailsDialog> {
               ],
             ],
           ),
+        ),
         ),
         ),
         ).animate().scale(duration: 220.ms, curve: Curves.easeOutBack).fade();

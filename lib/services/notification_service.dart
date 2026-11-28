@@ -144,7 +144,6 @@ class NotificationService {
   static bool get _isSupported => _isAndroid || _isWindows || _isApple;
 
   static int _campaignNotifId(String campaignId) => 2000 + (campaignId.hashCode.abs() % 50000);
-  static int _progressNotifId(String campaignId) => 55000 + (campaignId.hashCode.abs() % 50000);
   static const int _parallelSummaryId = 1998;
   static const String updatePayload = 'app_update';
 
@@ -250,33 +249,53 @@ class NotificationService {
     return events;
   }
 
-  /// Fires 60s before a scheduled campaign starts.
+  /// Fires 60s before a scheduled campaign starts and updates silently each second
+  /// using the single per-schedule notification ID.
   static Future<void> showPreStartCountdownNotification(
     ScheduledEmail email,
-    int secondsLeft,
-  ) async {
+    int secondsLeft, {
+    bool silent = false,
+  }) async {
     if (!_isSupported) return;
     await initialize();
     final name = _labelFor(email);
     final total = email.recipients.length;
+    final pct = ((60 - secondsLeft) / 60 * 100).round().clamp(0, 100);
 
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: AndroidNotificationDetails(
-        'mailflow_sending_start',
-        'Mail Sending Started',
-        channelDescription: 'Plays system sound when automated email sending begins',
-        importance: Importance.high,
-        priority: Priority.high,
-        playSound: true,
+        silent ? 'mailflow_sending_progress' : 'mailflow_sending_start',
+        silent ? 'Live Sending Progress' : 'Mail Sending Started',
+        channelDescription: 'Countdown and live progress for scheduled emails',
+        importance: silent ? Importance.low : Importance.high,
+        priority: silent ? Priority.low : Priority.high,
+        playSound: !silent,
+        onlyAlertOnce: true,
+        ongoing: true,
+        showProgress: true,
+        maxProgress: 60,
+        progress: (60 - secondsLeft).clamp(0, 60),
       ),
-      iOS: DarwinNotificationDetails(presentAlert: true, presentBanner: true),
-      macOS: DarwinNotificationDetails(presentAlert: true, presentBanner: true),
+      iOS: DarwinNotificationDetails(presentAlert: !silent, presentBanner: !silent, presentSound: !silent),
+      macOS: DarwinNotificationDetails(presentAlert: !silent, presentBanner: !silent, presentSound: !silent),
+      windows: WindowsNotificationDetails(
+        audio: silent ? WindowsNotificationAudio.silent() : WindowsNotificationAudio.preset(sound: WindowsNotificationSound.mail),
+        subtitle: email.senderEmail,
+        progressBars: [
+          WindowsProgressBar(
+            id: 'pre_${email.id}',
+            title: '$name • Starting in ${secondsLeft}s',
+            status: '$total recipient${total == 1 ? '' : 's'}',
+            value: (pct / 100).clamp(0.0, 1.0),
+          ),
+        ],
+      ),
     );
 
     await _notificationsPlugin.show(
       id: _campaignNotifId(email.id),
-      title: 'Starting Soon: $name',
-      body: 'Sending $total email${total == 1 ? '' : 's'} in ${secondsLeft}s...',
+      title: 'Starting Soon: $name (${secondsLeft}s)',
+      body: 'Starts in ${secondsLeft}s • $total recipient${total == 1 ? '' : 's'}',
       notificationDetails: details,
       payload: email.id,
     );
@@ -323,10 +342,11 @@ class NotificationService {
     );
   }
 
-  /// Updates an ongoing silent progress notification while a campaign sends.
+  /// Updates the single per-schedule notification silently while a campaign sends.
   static Future<void> showSendingProgressNotification(
     ScheduledEmail email, {
     int parallelCount = 1,
+    int? nextSendInSec,
   }) async {
     if (!_isSupported) return;
     await initialize();
@@ -336,7 +356,10 @@ class NotificationService {
     final sent = email.sentCount.clamp(0, total);
     final current = SendNotificationMonitor.currentRecipient(email);
     final recipientPart = current != null ? ' -> $current' : '';
-    final parallelPart = parallelCount > 1 ? ' ($parallelCount parallel)' : '';
+    final gapPart = nextSendInSec != null && nextSendInSec > 0
+        ? ' • Next in ${nextSendInSec}s'
+        : '';
+    final parallelPart = parallelCount > 1 ? ' • $parallelCount parallel' : '';
     final progressValue = total > 0 ? sent / total : 0.0;
 
     final details = NotificationDetails(
@@ -361,7 +384,7 @@ class NotificationService {
         progressBars: [
           WindowsProgressBar(
             id: 'prog_${email.id}',
-            title: '$sent/$total sent$parallelPart',
+            title: '$sent/$total sent$gapPart$parallelPart',
             status: 'Sending$recipientPart',
             value: progressValue.clamp(0.0, 1.0),
           ),
@@ -370,9 +393,9 @@ class NotificationService {
     );
 
     await _notificationsPlugin.show(
-      id: _progressNotifId(email.id),
-      title: 'Sending: $name',
-      body: '$sent / $total sent$recipientPart$parallelPart',
+      id: _campaignNotifId(email.id),
+      title: 'Sending: $name ($sent/$total)',
+      body: '$sent/$total sent$gapPart$recipientPart$parallelPart',
       notificationDetails: details,
       payload: email.id,
     );
@@ -440,7 +463,6 @@ class NotificationService {
     _lastNotifiedEventById[email.id] = key;
 
     await initialize();
-    await cancelNotification(_progressNotifId(email.id));
 
     final name = _labelFor(email);
     final total = email.recipients.length;

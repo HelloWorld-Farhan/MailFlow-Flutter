@@ -41,6 +41,9 @@ class ScheduledEmail {
   /// Epoch timestamp of last status update (used by watchdog)
   final int lastUpdateEpoch;
 
+  /// Next pending email's scheduled wall-clock timestamp (local time), if any.
+  final DateTime? nextSendAt;
+
   ScheduledEmail({
     required this.id,
     required this.senderEmail,
@@ -67,6 +70,7 @@ class ScheduledEmail {
     this.forceWeekend = true,
     this.delayMinutes = 0,
     int? lastUpdateEpoch,
+    this.nextSendAt,
   })  : recipientStatuses = recipientStatuses ?? {},
         mergedSourceIds = mergedSourceIds ?? [],
         mergeContributions = mergeContributions ?? {},

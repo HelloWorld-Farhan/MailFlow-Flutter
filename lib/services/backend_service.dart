@@ -250,6 +250,7 @@ class BackendService {
     final jobs = (row['email_jobs'] as List<dynamic>?) ?? const [];
     final recipients = <String>[];
     final statuses = <String, String>{};
+    DateTime? nextSendAt;
     for (final j in jobs) {
       final jm = j as Map<String, dynamic>;
       final email = (jm['recipient_email'] ?? '').toString();
@@ -265,6 +266,7 @@ class BackendService {
         statuses[email] = 'sent';
       } else {
         statuses[email] = 'pending';
+        nextSendAt ??= DateTime.tryParse((jm['send_at'] ?? '').toString())?.toLocal();
       }
     }
 
@@ -323,6 +325,7 @@ class BackendService {
       queuedAfter: row['queued_after']?.toString(),
       forceWeekend: row['force_weekend'] == true,
       delayMinutes: (row['delay_minutes'] as num?)?.toInt() ?? 0,
+      nextSendAt: nextSendAt,
     );
   }
 
