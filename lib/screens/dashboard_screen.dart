@@ -293,6 +293,11 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   void _openScheduleModal({ScheduledEmail? existingEmail, bool isDraft = false}) {
     FocusManager.instance.primaryFocus?.unfocus();
+    final existingNames = <String>{
+      for (final item in [..._history, ..._drafts])
+        if (item.id != existingEmail?.id && (item.scheduleName?.trim().isNotEmpty ?? false))
+          item.scheduleName!.trim().toLowerCase(),
+    };
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -301,7 +306,12 @@ class _DashboardScreenState extends State<DashboardScreen>
       useSafeArea: true,
       builder: (context) => ResponsiveCenter(
         maxWidth: 640,
-        child: _ScheduleModal(editEmail: existingEmail, isDraft: isDraft),
+        child: _ScheduleModal(
+          editEmail: existingEmail,
+          isDraft: isDraft,
+          existingScheduleNames: existingNames,
+          onDraftChanged: _loadDrafts,
+        ),
       ),
     ).then((_) {
       FocusManager.instance.primaryFocus?.unfocus();
@@ -2368,7 +2378,14 @@ class _DetailsDialogState extends State<_DetailsDialog> {
 class _ScheduleModal extends StatefulWidget {
   final ScheduledEmail? editEmail;
   final bool isDraft;
-  const _ScheduleModal({this.editEmail, this.isDraft = false});
+  final Set<String> existingScheduleNames;
+  final VoidCallback? onDraftChanged;
+  const _ScheduleModal({
+    this.editEmail,
+    this.isDraft = false,
+    this.existingScheduleNames = const {},
+    this.onDraftChanged,
+  });
 
   @override
   State<_ScheduleModal> createState() => _ScheduleModalState();
@@ -2427,7 +2444,32 @@ class _ScheduleModalState extends State<_ScheduleModal>
   bool _dateQuotaFull = false;
   bool _isSubmitting = false;
   bool _savedOrSubmitted = false;
+  bool _isScheduleNameDuplicate = false;
+  late final String _draftId = (widget.isDraft && widget.editEmail != null)
+      ? widget.editEmail!.id
+      : 'draft_${DateTime.now().millisecondsSinceEpoch}';
   Timer? _senderLookupDebounce;
+
+  bool get _isDraftNameLocked =>
+      widget.isDraft && (widget.editEmail?.scheduleName?.trim().isNotEmpty ?? false);
+
+  void _onScheduleNameChanged() {
+    if (_isDraftNameLocked) return;
+    final norm = _scheduleNameController.text.trim().toLowerCase();
+    final dup = norm.isNotEmpty && widget.existingScheduleNames.contains(norm);
+    if (dup != _isScheduleNameDuplicate || _scheduleNameMsg != null) {
+      setState(() {
+        _isScheduleNameDuplicate = dup;
+        if (dup) {
+          _scheduleNameMsg = null;
+          _isScheduleNameErr = false;
+        }
+      });
+    } else {
+      // Rebuild to show/hide live uniqueness badge as user types
+      setState(() {});
+    }
+  }
 
   @override
   void initState() {
@@ -2437,6 +2479,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
     _loadTemplates();
     _senderController.addListener(_onSenderChanged);
     _dateController.addListener(_onSenderChanged); // recompute when date changes
+    _scheduleNameController.addListener(_onScheduleNameChanged);
     if (widget.editEmail != null) {
       final e = widget.editEmail!;
       _sendType = e.type;
@@ -2445,17 +2488,22 @@ class _ScheduleModalState extends State<_ScheduleModal>
       _subjectController.text = e.subject;
       _bodyController.text = e.body;
       _dateController.text = e.scheduledDate;
-      _isAm = e.scheduledTime.contains('AM');
+      _isAm = e.scheduledTime.isEmpty || e.scheduledTime.contains('AM');
       _timeController.text = e.scheduledTime.replaceAll(RegExp(r' AM| PM'), '');
       if (_sendType == 'Single' || _sendType == 'Multiple') {
-        _emailControllers = e.recipients.map((r) => TextEditingController(text: r)).toList();
+        _emailControllers = e.recipients.isNotEmpty
+            ? e.recipients.map((r) => TextEditingController(text: r)).toList()
+            : [TextEditingController()];
       } else if (_sendType == 'PDF') {
-        _pdfPath = 'Extracted (${e.recipients.length} emails)';
+        _pdfPath = e.pdfName ?? (e.recipients.isNotEmpty ? 'Extracted (${e.recipients.length} emails)' : null);
         _pdfEmails = e.recipients;
         _dailyLimitController.text = e.dailyLimit > 0 ? e.dailyLimit.toString() : '40';
       }
       _delayMinutes = e.delayMinutes;
       _scheduleNameController.text = e.scheduleName ?? '';
+      _isScheduleNameDuplicate = !_isDraftNameLocked &&
+          _scheduleNameController.text.trim().isNotEmpty &&
+          widget.existingScheduleNames.contains(_scheduleNameController.text.trim().toLowerCase());
     } else {
       _sendType = 'Single';
     }
@@ -2522,6 +2570,9 @@ class _ScheduleModalState extends State<_ScheduleModal>
     if (state == AppLifecycleState.paused) {
       // Detach IME cleanly before backgrounding so Android never leaves a blank keyboard gap on return.
       FocusManager.instance.primaryFocus?.unfocus();
+      if (!_savedOrSubmitted) {
+        unawaited(_autoSaveDraftIfNeeded());
+      }
     } else if (state == AppLifecycleState.resumed) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -2758,6 +2809,10 @@ class _ScheduleModalState extends State<_ScheduleModal>
       if (recipients.isEmpty) { _showMsg('recipient', 'Add at least one recipient.'); return; }
     }
     
+    if (_scheduleNameController.text.trim().isNotEmpty && _isScheduleNameDuplicate) {
+      _showMsg('scheduleName', 'Schedule name already exists. Please use a unique name.');
+      return;
+    }
     if (_sendType == 'Multiple' || _sendType == 'PDF') {
       if (_scheduleNameController.text.trim().isEmpty) { _showMsg('scheduleName', 'Please provide a schedule name.'); return; }
     }
@@ -2788,7 +2843,9 @@ class _ScheduleModalState extends State<_ScheduleModal>
 
     final dailyLimit = _sendType == 'PDF' ? (int.tryParse(_dailyLimitController.text.trim()) ?? 40) : 0;
     final newEmail = ScheduledEmail(
-      id: widget.editEmail?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      id: (widget.editEmail != null && !widget.isDraft)
+          ? widget.editEmail!.id
+          : DateTime.now().millisecondsSinceEpoch.toString(),
       senderEmail: sender,
       type: _sendType,
       recipients: recipients,
@@ -2825,7 +2882,8 @@ class _ScheduleModalState extends State<_ScheduleModal>
       await BackendService.createCampaign(newEmail);
       _savedOrSubmitted = true;
       if (widget.isDraft && widget.editEmail != null) {
-        unawaited(StorageService.deleteDraft(widget.editEmail!.id));
+        await StorageService.deleteDraft(widget.editEmail!.id);
+        widget.onDraftChanged?.call();
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -3009,7 +3067,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
     await BackendService.createCampaign(merged);
   }
 
-  void _autoSaveDraftIfNeeded() {
+  Future<void> _autoSaveDraftIfNeeded() async {
     if (widget.editEmail != null && !widget.isDraft) return;
     final sender = _senderController.text.trim();
     final name = _scheduleNameController.text.trim();
@@ -3031,24 +3089,22 @@ class _ScheduleModalState extends State<_ScheduleModal>
         sender.isNotEmpty ||
         recipients.isNotEmpty ||
         subject.trim().isNotEmpty ||
-        body.trim().isNotEmpty;
+        body.trim().isNotEmpty ||
+        _dateController.text.trim().isNotEmpty ||
+        _timeController.text.trim().isNotEmpty;
     if (!hasAnyContent) return;
 
     final draft = ScheduledEmail(
-      id: widget.isDraft && widget.editEmail != null
-          ? widget.editEmail!.id
-          : 'draft_${DateTime.now().millisecondsSinceEpoch}',
+      id: _draftId,
       senderEmail: sender,
       type: _sendType,
       recipients: recipients,
       subject: subject,
       body: body,
-      scheduledDate: _dateController.text.trim().isNotEmpty
-          ? _dateController.text.trim()
-          : DateHelpers.todayDmy(),
+      scheduledDate: _dateController.text.trim(),
       scheduledTime: _timeController.text.trim().isNotEmpty
           ? '${_timeController.text.trim()} ${_isAm ? "AM" : "PM"}'
-          : '12:00 PM',
+          : '',
       status: 'Draft',
       scheduleName: name,
       pdfName: _sendType == 'PDF' ? _pdfPath : null,
@@ -3056,7 +3112,8 @@ class _ScheduleModalState extends State<_ScheduleModal>
       delayMinutes: _delayMinutes,
       forceWeekend: true,
     );
-    unawaited(StorageService.saveDraft(draft));
+    await StorageService.saveDraft(draft);
+    widget.onDraftChanged?.call();
   }
 
   @override
@@ -3064,7 +3121,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
     return PopScope(
       onPopInvokedWithResult: (didPop, _) {
         if (didPop && !_savedOrSubmitted) {
-          _autoSaveDraftIfNeeded();
+          unawaited(_autoSaveDraftIfNeeded());
         }
       },
       child: GestureDetector(
@@ -3167,16 +3224,69 @@ class _ScheduleModalState extends State<_ScheduleModal>
                   ),
                   const SizedBox(height: 20),
 
-                  // â”€â”€ Section 1: Name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                  // ── Section 1: Name ──────────────────────────────────
                   _SectionHeader(title: '1  Schedule Name', icon: Icons.label_outline),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _scheduleNameController,
-                    decoration: const InputDecoration(
+                    enabled: !_isDraftNameLocked,
+                    decoration: InputDecoration(
                       hintText: 'My Weekly Update Blast',
-                      prefixIcon: Icon(Icons.label_outline, size: 18),
+                      prefixIcon: const Icon(Icons.label_outline, size: 18),
+                      suffixIcon: _isDraftNameLocked
+                          ? const Icon(Icons.lock_rounded, size: 18, color: AppTheme.textLight)
+                          : (_scheduleNameController.text.trim().isNotEmpty
+                              ? Icon(
+                                  _isScheduleNameDuplicate ? Icons.error_outline_rounded : Icons.check_circle_rounded,
+                                  size: 18,
+                                  color: _isScheduleNameDuplicate ? AppTheme.errorRed : AppTheme.successGreen,
+                                )
+                              : null),
                     ),
                   ).animate().fade().slideY(),
+                  if (_isDraftNameLocked)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6, left: 4),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.lock_rounded, size: 13, color: AppTheme.textLight),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Schedule name cannot be changed while editing a draft',
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 12,
+                              color: AppTheme.textSecondary(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (_scheduleNameController.text.trim().isNotEmpty && _scheduleNameMsg == null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6, left: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _isScheduleNameDuplicate ? Icons.cancel_rounded : Icons.check_circle_rounded,
+                            size: 14,
+                            color: _isScheduleNameDuplicate ? AppTheme.errorRed : AppTheme.successGreen,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            _isScheduleNameDuplicate
+                                ? 'Name already exists — please choose a unique name'
+                                : 'Unique schedule name available',
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: _isScheduleNameDuplicate ? AppTheme.errorRed : AppTheme.successGreen,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   _buildFieldMsg(_scheduleNameMsg, _isScheduleNameErr),
                   const SizedBox(height: 24),
 
