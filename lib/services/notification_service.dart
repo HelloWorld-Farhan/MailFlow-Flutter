@@ -244,7 +244,7 @@ class NotificationService {
 
     if (monitor.shouldUpdateProgress(active)) {
       if (active.isNotEmpty) {
-        await _showParallelSummaryNotification(active);
+        await showConsolidatedActiveNotification(active);
       } else {
         await cancelNotification(_parallelSummaryId);
       }
@@ -348,67 +348,8 @@ class NotificationService {
     );
   }
 
-  /// Updates the single per-schedule notification silently while a campaign sends.
-  static Future<void> showSendingProgressNotification(
-    ScheduledEmail email, {
-    int parallelCount = 1,
-    int? nextSendInSec,
-  }) async {
-    if (!_isSupported) return;
-    await initialize();
-
-    final name = _labelFor(email);
-    final total = email.recipients.length;
-    final sent = email.sentCount.clamp(0, total);
-    final current = SendNotificationMonitor.currentRecipient(email);
-    final recipientPart = current != null ? ' -> $current' : '';
-    final gapPart = nextSendInSec != null && nextSendInSec > 0
-        ? ' • Next in ${nextSendInSec}s'
-        : '';
-    final parallelPart = parallelCount > 1 ? ' • $parallelCount parallel' : '';
-    final progressValue = total > 0 ? sent / total : 0.0;
-
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'mailflow_sending_progress',
-        'Live Sending Progress',
-        channelDescription: 'Silent live progress for active email dispatches',
-        importance: Importance.low,
-        priority: Priority.low,
-        playSound: false,
-        onlyAlertOnce: true,
-        ongoing: true,
-        showProgress: total > 0,
-        maxProgress: total > 0 ? total : 1,
-        progress: sent,
-        color: _notifAccentColor,
-      ),
-      iOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
-      macOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
-      windows: WindowsNotificationDetails(
-        audio: WindowsNotificationAudio.silent(),
-        subtitle: email.senderEmail,
-        progressBars: [
-          WindowsProgressBar(
-            id: 'prog_${email.id}',
-            title: '$sent/$total sent$gapPart$parallelPart',
-            status: 'Sending$recipientPart',
-            value: progressValue.clamp(0.0, 1.0),
-          ),
-        ],
-      ),
-    );
-
-    await _notificationsPlugin.show(
-      id: _campaignNotifId(email.id),
-      title: 'Sending: $name ($sent/$total)',
-      body: '$sent/$total sent$gapPart$recipientPart$parallelPart',
-      notificationDetails: details,
-      payload: email.id,
-    );
-  }
-
-  static Future<void> _showParallelSummaryNotification(
+  /// Updates a single consolidated notification showing all active schedules.
+  static Future<void> showConsolidatedActiveNotification(
     List<ScheduledEmail> active,
   ) async {
     if (!_isSupported) return;

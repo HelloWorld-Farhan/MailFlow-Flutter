@@ -61,6 +61,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   String? _openDetailsCampaignId;
   bool _updateDialogOpen = false;
   DateTime? _lastUpdateCheckAt;
+  Timer? _updateCheckTimer;
+  String? _lastNotifiedVersion;
+  String? _lastPopupShownVersion;
   UpdateCheckResult? _latestUpdateResult;
   CampaignNotificationEvent? _latestAlert;
   String _currentVersion = '1.0.0';
@@ -83,6 +86,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       _loadHistory();
     });
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => _onSecondTick());
+    _updateCheckTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      _initVersionAndCheckUpdate();
+    });
   }
 
   void _onSecondTick() {
@@ -102,11 +108,6 @@ class _DashboardScreenState extends State<DashboardScreen>
         } else if (now.second % 10 == 0) {
           shouldDispatch = true;
         }
-        NotificationService.showSendingProgressNotification(
-          item,
-          parallelCount: activeList.length,
-          nextSendInSec: nextSec != null && nextSec > 0 ? nextSec : null,
-        );
       } else if (item.status == 'Scheduled') {
         final startDt = BackendService.parseScheduleDateTime(item.scheduledDate, item.scheduledTime);
         if (startDt != null) {
@@ -125,6 +126,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           }
         }
       }
+    }
+
+    if (activeList.isNotEmpty) {
+      NotificationService.showConsolidatedActiveNotification(activeList);
     }
 
     if (hasLiveWork) {
@@ -148,7 +153,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       BackendService.verifyCloudConnection();
       _loadHistory();
       final last = _lastUpdateCheckAt;
-      if (last == null || DateTime.now().difference(last) > const Duration(minutes: 15)) {
+      if (last == null || DateTime.now().difference(last) > const Duration(seconds: 30)) {
         _initVersionAndCheckUpdate();
       }
     }
@@ -169,18 +174,20 @@ class _DashboardScreenState extends State<DashboardScreen>
       setState(() {
         _hasUpdate = true;
         _latestVersion = ver;
+        _bannerDismissed = false;
       });
-      // Trigger status bar notification with default sound & vibration
-      NotificationService.showUpdateNotification(
-        newVersion: ver,
-        body: 'MailFlow v$ver is now ready. Tap to download & install.',
-      );
+      if (_lastNotifiedVersion != ver) {
+        _lastNotifiedVersion = ver;
+        NotificationService.showUpdateNotification(
+          newVersion: ver,
+          body: 'MailFlow v$ver is now ready. Tap to download & install.',
+        );
+      }
 
-      final prefs = await SharedPreferences.getInstance();
-      final dismissedVer = prefs.getString('dismissed_update_version');
-      if (mounted && dismissedVer != ver && !_updateDialogOpen) {
+      if (mounted && _lastPopupShownVersion != ver && !_updateDialogOpen) {
+        _lastPopupShownVersion = ver;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _showUpdatePopup(result: result, markDismissedOnClose: true);
+          if (mounted) _showUpdatePopup(result: result);
         });
       }
     }
@@ -218,6 +225,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _notifTapSub?.cancel();
     _refreshTimer?.cancel();
     _countdownTimer?.cancel();
+    _updateCheckTimer?.cancel();
     _alertDismissTimer?.cancel();
     _historyNotifier.dispose();
     _nowNotifier.dispose();
@@ -912,6 +920,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     label: 'Scheduled',
                     value: '$scheduledCount',
                     color: AppTheme.primaryBlue,
+                    onTap: () => setState(() => _selectedTab = 0),
                   ),
                   const SizedBox(width: 12),
                   _StatChip(
@@ -919,6 +928,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     label: 'Sent',
                     value: '$sentCount',
                     color: AppTheme.successGreen,
+                    onTap: () => setState(() => _selectedTab = 1),
                   ),
                   const SizedBox(width: 12),
                   _StatChip(
