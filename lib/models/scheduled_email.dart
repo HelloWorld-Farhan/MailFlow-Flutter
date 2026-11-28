@@ -63,7 +63,8 @@ class ScheduledEmail {
     Map<String, int>? mergeContributions,
     Map<String, String>? mergeSourceNames,
     this.queuedAfter,
-    this.forceWeekend = false,
+    // testing: weekend sending enabled until user asks to restore weekday-only
+    this.forceWeekend = true,
     this.delayMinutes = 0,
     int? lastUpdateEpoch,
   })  : recipientStatuses = recipientStatuses ?? {},

@@ -250,6 +250,38 @@ class NotificationService {
     return events;
   }
 
+  /// Fires 60s before a scheduled campaign starts.
+  static Future<void> showPreStartCountdownNotification(
+    ScheduledEmail email,
+    int secondsLeft,
+  ) async {
+    if (!_isSupported) return;
+    await initialize();
+    final name = _labelFor(email);
+    final total = email.recipients.length;
+
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'mailflow_sending_start',
+        'Mail Sending Started',
+        channelDescription: 'Plays system sound when automated email sending begins',
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: true,
+      ),
+      iOS: DarwinNotificationDetails(presentAlert: true, presentBanner: true),
+      macOS: DarwinNotificationDetails(presentAlert: true, presentBanner: true),
+    );
+
+    await _notificationsPlugin.show(
+      id: _campaignNotifId(email.id),
+      title: 'Starting Soon: $name',
+      body: 'Sending $total email${total == 1 ? '' : 's'} in ${secondsLeft}s...',
+      notificationDetails: details,
+      payload: email.id,
+    );
+  }
+
   /// Fires immediately when a campaign starts sending, with system notification sound.
   static Future<void> showSendingStartedNotification(
     ScheduledEmail email, {

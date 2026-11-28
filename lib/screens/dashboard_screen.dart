@@ -45,11 +45,15 @@ class _DashboardScreenState extends State<DashboardScreen>
   int _totalDailySent = 0;
 
   Timer? _refreshTimer;
+  Timer? _countdownTimer;
   Timer? _alertDismissTimer;
   StreamSubscription<void>? _realtimeSub;
   StreamSubscription<String>? _notifTapSub;
   final ValueNotifier<List<ScheduledEmail>> _historyNotifier =
       ValueNotifier<List<ScheduledEmail>>([]);
+  final ValueNotifier<DateTime> _nowNotifier = ValueNotifier<DateTime>(DateTime.now());
+  final Set<String> _preStartNotifiedIds = {};
+  DateTime? _lastTickDispatchAt;
   String? _pendingLaunchCampaignId;
   String? _openDetailsCampaignId;
   bool _updateDialogOpen = false;
@@ -74,6 +78,49 @@ class _DashboardScreenState extends State<DashboardScreen>
     _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
       _loadHistory();
     });
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => _onSecondTick());
+  }
+
+  void _onSecondTick() {
+    if (!mounted || _history.isEmpty) return;
+    final now = DateTime.now();
+    bool hasLiveWork = false;
+    bool shouldDispatch = false;
+
+    for (final item in _history) {
+      if (SendNotificationMonitor.isActiveStatus(item.status)) {
+        hasLiveWork = true;
+        if (now.second % 10 == 0) shouldDispatch = true;
+      } else if (item.status == 'Scheduled') {
+        final startDt = BackendService.parseScheduleDateTime(item.scheduledDate, item.scheduledTime);
+        if (startDt != null) {
+          final diffSec = startDt.difference(now).inSeconds;
+          if (diffSec <= 60 && diffSec > 0) {
+            hasLiveWork = true;
+            if (_preStartNotifiedIds.add(item.id)) {
+              NotificationService.showPreStartCountdownNotification(item, diffSec);
+            }
+          } else if (diffSec <= 0 && diffSec >= -120) {
+            hasLiveWork = true;
+            shouldDispatch = true;
+          }
+        }
+      }
+    }
+
+    if (hasLiveWork) {
+      _nowNotifier.value = now;
+      if (now.second % 3 == 0) {
+        _loadHistory();
+      }
+      if (shouldDispatch) {
+        final last = _lastTickDispatchAt;
+        if (last == null || now.difference(last).inSeconds >= 5) {
+          _lastTickDispatchAt = now;
+          BackendService.triggerTick().catchError((_) => <String, dynamic>{});
+        }
+      }
+    }
   }
 
   @override
@@ -151,8 +198,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     _realtimeSub?.cancel();
     _notifTapSub?.cancel();
     _refreshTimer?.cancel();
+    _countdownTimer?.cancel();
     _alertDismissTimer?.cancel();
     _historyNotifier.dispose();
+    _nowNotifier.dispose();
     super.dispose();
   }
 
@@ -333,6 +382,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         email: email,
         primaryColor: AppTheme.primaryBlue,
         historyNotifier: _historyNotifier,
+        nowNotifier: _nowNotifier,
       ),
     ).then((_) {
       if (_openDetailsCampaignId == email.id) {
@@ -861,6 +911,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             return _EmailCard(
                               item: item,
                               index: index,
+                              nowNotifier: _nowNotifier,
                               onTap: () => _showEmailDetails(item),
                               onEdit: () => _openScheduleModal(existingEmail: item),
                               onResend: () => _openResendModal(item),
@@ -1206,10 +1257,12 @@ class _EmptyState extends StatelessWidget {
 class _EmailCard extends StatelessWidget {
   final ScheduledEmail item;
   final int index;
+  final ValueNotifier<DateTime>? nowNotifier;
   final VoidCallback onTap, onEdit, onResend, onDelete, onStop, onResume;
   const _EmailCard({
     required this.item,
     required this.index,
+    this.nowNotifier,
     required this.onTap,
     required this.onEdit,
     required this.onResend,
@@ -1344,6 +1397,9 @@ class _EmailCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                // Live 60s pre-start countdown, sending delay ticker, or Done badge
+                if (nowNotifier != null)
+                  _CountdownBanner(item: item, nowNotifier: nowNotifier!),
                 // Progress bar for active or multi-day PDF campaigns
                 if ((_isPdfCampaign || _isActive) && !_isSuccess && total > 0) ...[
                   const SizedBox(height: 12),
@@ -1686,14 +1742,129 @@ class _ContactsDialogState extends State<_ContactsDialog> {
   }
 }
 
+class _CountdownBanner extends StatelessWidget {
+  final ScheduledEmail item;
+  final ValueNotifier<DateTime> nowNotifier;
+  const _CountdownBanner({required this.item, required this.nowNotifier});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<DateTime>(
+      valueListenable: nowNotifier,
+      builder: (context, now, _) {
+        if (item.status == 'Success') {
+          return Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.successGreen.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.successGreen.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, size: 15, color: AppTheme.successGreen),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Done • ${item.sentCount}/${item.recipients.length} sent',
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.successGreen,
+                    ),
+                  ),
+                ],
+              ),
+            ).animate().scale(begin: const Offset(0.96, 0.96), duration: 240.ms, curve: Curves.easeOutBack).fade(),
+          );
+        }
+
+        if (item.status == 'Scheduled') {
+          final startDt = BackendService.parseScheduleDateTime(item.scheduledDate, item.scheduledTime);
+          if (startDt == null) return const SizedBox.shrink();
+          final diffSec = startDt.difference(now).inSeconds;
+          if (diffSec > 60) return const SizedBox.shrink();
+
+          final isDueNow = diffSec <= 0;
+          final pct = isDueNow ? 1.0 : ((60 - diffSec) / 60).clamp(0.0, 1.0);
+          final label = isDueNow ? 'Starting now...' : 'Starting in ${diffSec}s';
+          return Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.timer_rounded, size: 14, color: AppTheme.warningAmber),
+                    const SizedBox(width: 5),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.warningAmber,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: isDueNow ? null : pct,
+                    backgroundColor: AppTheme.warningAmber.withValues(alpha: 0.16),
+                    valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.warningAmber),
+                    minHeight: 4,
+                  ),
+                ),
+              ],
+            ).animate().fade(duration: 200.ms),
+          );
+        }
+
+        if (SendNotificationMonitor.isActiveStatus(item.status) && item.delayMinutes > 0) {
+          final sec = 60 - now.second;
+          final mm = (sec ~/ 60).toString().padLeft(2, '0');
+          final ss = (sec % 60).toString().padLeft(2, '0');
+          return Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.bolt_rounded, size: 14, color: AppTheme.primaryBlue),
+                const SizedBox(width: 4),
+                Text(
+                  'Live sending (${item.delayMinutes}m interval • sync in $mm:$ss)',
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.primaryBlue,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return const SizedBox.shrink();
+      },
+    );
+  }
+}
+
 class _DetailsDialog extends StatefulWidget {
   final ScheduledEmail email;
   final Color primaryColor;
   final ValueNotifier<List<ScheduledEmail>> historyNotifier;
+  final ValueNotifier<DateTime>? nowNotifier;
   const _DetailsDialog({
     required this.email,
     required this.primaryColor,
     required this.historyNotifier,
+    this.nowNotifier,
   });
 
   @override
@@ -1727,15 +1898,17 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                 : (isActive ? AppTheme.primaryBlue : AppTheme.warningAmber));
 
         return Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          child: GlassContainer(
-            borderRadius: 24,
-            blurSigma: 18,
-            color: AppTheme.cardBg(context).withValues(alpha: AppTheme.isDark(context) ? 0.92 : 0.88),
-            borderColor: isActive
-                ? AppTheme.primaryBlue.withValues(alpha: 0.35)
-                : AppTheme.border(context),
+          backgroundColor: AppTheme.cardBg(context),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: BorderSide(
+              color: isActive
+                  ? AppTheme.primaryBlue.withValues(alpha: 0.35)
+                  : AppTheme.border(context),
+            ),
+          ),
+          elevation: 8,
+          child: Padding(
             padding: const EdgeInsets.all(24),
             child: SingleChildScrollView(
               child: Column(
@@ -1790,6 +1963,8 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                       IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
                     ],
                   ),
+                  if (widget.nowNotifier != null)
+                    _CountdownBanner(item: email, nowNotifier: widget.nowNotifier!),
                   if (isActive && total > 0) ...[
                     const SizedBox(height: 14),
                     Row(
@@ -1954,8 +2129,8 @@ class _DetailsDialogState extends State<_DetailsDialog> {
             ],
           ),
         ),
-      ),
-    ).animate().scale(duration: 280.ms, curve: Curves.easeOutBack).fade().blur(begin: const Offset(6, 6), end: Offset.zero, duration: 280.ms);
+        ),
+        ).animate().scale(duration: 220.ms, curve: Curves.easeOutBack).fade();
       },
     );
   }
@@ -2406,7 +2581,8 @@ class _ScheduleModalState extends State<_ScheduleModal>
       sentCount: widget.editEmail?.sentCount ?? 0,
       lastSentDate: widget.editEmail?.lastSentDate,
       delayMinutes: _delayMinutes,
-      forceWeekend: _sendType != 'PDF' || DateHelpers.isWeekendDmy(_dateController.text),
+      // testing: weekend sending enabled until user asks to restore weekday-only
+      forceWeekend: true,
       createdAt: widget.editEmail?.createdAt ?? '${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}',
     );
 
@@ -2596,7 +2772,8 @@ class _ScheduleModalState extends State<_ScheduleModal>
       sentCount: 0,
       lastSentDate: existingPdf.lastSentDate,
       delayMinutes: newPdf.delayMinutes,
-      forceWeekend: existingPdf.forceWeekend || DateHelpers.isWeekendDmy(existingPdf.scheduledDate),
+      // testing: weekend sending enabled until user asks to restore weekday-only
+      forceWeekend: true,
       isMerged: true,
       mergedSourceIds: [existingPdf.id, newPdf.id],
       mergeContributions: {existingPdf.id: allocExisting, newPdf.id: allocNew},
@@ -3738,7 +3915,8 @@ class _ResendModalState extends State<_ResendModal> {
       recipientStatuses: {}, // Clears the ticks for the new schedule
       lastSentDate: '',
       recipients: widget.email.recipients.toSet().toList(),
-      forceWeekend: widget.email.type != 'PDF' || DateHelpers.isWeekendDmy(_dateController.text),
+      // testing: weekend sending enabled until user asks to restore weekday-only
+      forceWeekend: true,
       clearQueuedAfter: true,
     );
     

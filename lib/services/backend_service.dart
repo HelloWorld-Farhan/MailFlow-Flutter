@@ -183,6 +183,20 @@ class BackendService {
     _changesController.add(null);
   }
 
+  /// Triggers immediate Worker dispatch for due jobs and refreshes listeners if any were claimed.
+  static Future<Map<String, dynamic>> triggerTick() async {
+    final data = await _sendWorkerRequest(
+      'POST',
+      '/tick',
+      timeout: const Duration(seconds: 20),
+      errorLabel: 'Tick failed',
+    );
+    if ((data['claimed'] ?? 0) is int && (data['claimed'] as int) > 0) {
+      _changesController.add(null);
+    }
+    return data;
+  }
+
   /// Fetches campaigns + nested recipient job statuses from Supabase REST.
   static Future<List<ScheduledEmail>> fetchCampaigns() async {
     final uri = Uri.parse(
