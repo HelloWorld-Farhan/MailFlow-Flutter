@@ -293,7 +293,35 @@ class _DashboardScreenState extends State<DashboardScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Draft?', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-        content: Text('Are you sure you want to delete "$label"?', style: const TextStyle(fontFamily: 'Inter')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.errorRed.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.errorRed.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.label_outline_rounded, size: 15, color: AppTheme.errorRed),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.errorRed),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text('Are you sure you want to delete this draft?', style: TextStyle(fontFamily: 'Inter')),
+          ],
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
@@ -309,6 +337,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
     );
     if (confirm != true) return;
+    if (mounted) {
+      setState(() => _drafts.removeWhere((d) => d.id == draft.id));
+    }
     await StorageService.deleteDraft(draft.id);
     await _loadDrafts();
   }
@@ -367,12 +398,43 @@ class _DashboardScreenState extends State<DashboardScreen>
     ).then((_) => FocusManager.instance.primaryFocus?.unfocus());
   }
 
-  Future<void> _deleteEmail(String id) async {
+  Future<void> _deleteEmail(ScheduledEmail email) async {
+    final label = (email.scheduleName != null && email.scheduleName!.trim().isNotEmpty)
+        ? email.scheduleName!.trim()
+        : (email.subject.trim().isNotEmpty ? email.subject.trim() : email.senderEmail);
     final bool? confirm = await showBlurredDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Deletion', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-        content: const Text('Are you sure you want to delete this schedule? If you delete it, the process will be terminated and this info will be unrecoverable.', style: TextStyle(fontFamily: 'Inter')),
+        title: const Text('Delete Schedule?', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.errorRed.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.errorRed.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.label_outline_rounded, size: 15, color: AppTheme.errorRed),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.errorRed),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text('If you delete it, the process will be terminated and this info will be unrecoverable.', style: TextStyle(fontFamily: 'Inter')),
+          ],
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
@@ -389,9 +451,14 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
 
     if (confirm != true) return;
-
-    await BackendService.deleteCampaign(id);
-    _loadHistory();
+    if (mounted) {
+      setState(() {
+        _history.removeWhere((e) => e.id == email.id);
+        _historyNotifier.value = List.of(_history);
+      });
+    }
+    await BackendService.deleteCampaign(email.id);
+    await _loadHistory();
   }
 
   Future<void> _stopEmail(ScheduledEmail email) async {
@@ -983,7 +1050,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   : _showEmailDetails(item),
                               onEdit: () => _openScheduleModal(existingEmail: item, isDraft: isDraftTab),
                               onResend: () => _openResendModal(item),
-                              onDelete: () => isDraftTab ? _deleteDraft(item) : _deleteEmail(item.id),
+                              onDelete: () => isDraftTab ? _deleteDraft(item) : _deleteEmail(item),
                               onStop: () => _stopEmail(item),
                               onResume: () => _resumeEmail(item),
                             );
@@ -4561,11 +4628,44 @@ class _ResendModalState extends State<_ResendModal> {
               children: [
                 Row(
                   children: [
-                    Text(
-                      'Resend Email',
-                      style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Resend Email',
+                            style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primaryBlue.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppTheme.primaryBlue.withValues(alpha: 0.25)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.label_outline_rounded, size: 14, color: AppTheme.primaryBlue),
+                                const SizedBox(width: 5),
+                                Flexible(
+                                  child: Text(
+                                    (widget.email.scheduleName != null && widget.email.scheduleName!.trim().isNotEmpty)
+                                        ? widget.email.scheduleName!.trim()
+                                        : (widget.email.subject.trim().isNotEmpty ? widget.email.subject.trim() : widget.email.senderEmail),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontFamily: 'Outfit', fontSize: 12.5, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 10),
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
                       child: Container(
