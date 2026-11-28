@@ -395,43 +395,29 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _stopEmail(ScheduledEmail email) async {
+    final idx = _history.indexWhere((e) => e.id == email.id);
+    if (idx != -1 && mounted) {
+      setState(() {
+        _history[idx] = _history[idx].copyWith(status: 'Paused');
+        _historyNotifier.value = List.of(_history);
+      });
+    }
     await BackendService.pauseCampaign(email.id);
-    _loadHistory();
+    await _loadHistory();
   }
 
   Future<void> _resumeEmail(ScheduledEmail email) async {
-    final now = DateTime.now();
-    final isWeekend = now.weekday == DateTime.saturday || now.weekday == DateTime.sunday;
-    bool forceWeekend = false;
-
-    if (isWeekend) {
-      final confirm = await showBlurredDialog<bool>(
-        context: context,
-        builder: (c) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Row(children: [
-            Icon(Icons.warning_amber_rounded, color: AppTheme.errorRed),
-            SizedBox(width: 8),
-            Text('Weekend Warning', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, fontSize: 18)),
-          ]),
-          content: const Text('It is Saturday/Sunday. Companies might not check their email today. Do you still want to resume?', style: TextStyle(fontFamily: 'Inter', fontSize: 14)),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel', style: TextStyle(color: AppTheme.textMid))),
-            TextButton(
-              onPressed: () => Navigator.pop(c, true),
-              style: TextButton.styleFrom(backgroundColor: AppTheme.primaryBlue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-              child: const Text('Resume Anyway'),
-            ),
-          ],
-        ),
-      );
-      if (confirm != true) return;
-      forceWeekend = true;
-    }
-
     NotificationService.clearCampaignAlertState(email.id);
-    await BackendService.resumeCampaign(email.id, forceWeekend: forceWeekend);
-    _loadHistory();
+    final idx = _history.indexWhere((e) => e.id == email.id);
+    if (idx != -1 && mounted) {
+      setState(() {
+        _history[idx] = _history[idx].copyWith(status: 'Scheduled');
+        _historyNotifier.value = List.of(_history);
+      });
+    }
+    // testing: weekend sending enabled until user asks to restore weekday-only
+    await BackendService.resumeCampaign(email.id, forceWeekend: true);
+    await _loadHistory();
   }
 
   void _showAllContacts() async {
@@ -1257,7 +1243,7 @@ class _EmailCard extends StatelessWidget {
   bool get _isSuccess => item.status == 'Success';
   bool get _isFailed => item.status.startsWith('Failed');
   bool get _isPdfCampaign => item.type == 'PDF' && item.dailyLimit > 0;
-  bool get _isPausable => _isPdfCampaign || item.type == 'Multiple' || item.isMerged;
+  bool get _isPausable => !_isSuccess && !_isFailed;
 
   @override
   Widget build(BuildContext context) {
@@ -3533,7 +3519,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
                       return TextField(
                         controller: ctrl,
                         focusNode: focus,
-                        enabled: !_isAuthenticated,
+                        readOnly: _isAuthenticated,
                         onChanged: (v) => _senderController.text = v,
                         decoration: InputDecoration(
                           hintText: 'your@gmail.com',
@@ -3543,17 +3529,18 @@ class _ScheduleModalState extends State<_ScheduleModal>
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     const Icon(Icons.verified_rounded, color: AppTheme.successGreen),
-                                    if (widget.editEmail == null || widget.isDraft)
-                                      IconButton(
-                                        tooltip: 'Switch sender',
-                                        icon: const Icon(Icons.edit_outlined, size: 18),
-                                        onPressed: () {
-                                          setState(() {
-                                            _isAuthenticated = false;
-                                            _senderController.clear();
-                                          });
-                                        },
-                                      ),
+                                    IconButton(
+                                      tooltip: 'Switch sender',
+                                      icon: const Icon(Icons.edit_outlined, size: 18),
+                                      onPressed: () {
+                                        setState(() {
+                                          _isAuthenticated = false;
+                                          _senderController.clear();
+                                          ctrl.clear();
+                                        });
+                                        focus.requestFocus();
+                                      },
+                                    ),
                                   ],
                                 )
                               : null,

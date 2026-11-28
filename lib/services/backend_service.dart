@@ -172,7 +172,10 @@ class BackendService {
     await _sendWorkerRequest(
       'POST',
       '/campaigns/$id/resume',
-      body: {'forceWeekend': forceWeekend},
+      body: {
+        'forceWeekend': forceWeekend,
+        'timezoneOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
+      },
       errorLabel: 'Resume failed',
     );
     _changesController.add(null);
