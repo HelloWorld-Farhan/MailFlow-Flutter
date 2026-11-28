@@ -328,12 +328,22 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '$totalSent emails',
+                                    '$totalSent / $maxCapacity emails',
                                     style: const TextStyle(
                                       fontFamily: 'Outfit',
-                                      fontSize: 26,
+                                      fontSize: 24,
                                       fontWeight: FontWeight.w800,
                                       color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: LinearProgressIndicator(
+                                      value: capacityPct,
+                                      minHeight: 7,
+                                      backgroundColor: Colors.white.withValues(alpha: 0.22),
+                                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                                     ),
                                   ),
                                   const SizedBox(height: 6),
@@ -341,8 +351,9 @@ class _EmailLimitScreenState extends State<EmailLimitScreen>
                                     spacing: 8,
                                     runSpacing: 4,
                                     children: [
+                                      _kpiBadge('${(capacityPct * 100).toStringAsFixed(0)}% used'),
+                                      _kpiBadge('${(maxCapacity - totalSent).clamp(0, maxCapacity)} left'),
                                       _kpiBadge('${dataset.length} Accounts'),
-                                      _kpiBadge('Cap $_dailyCap / day'),
                                     ],
                                   ),
                                 ],

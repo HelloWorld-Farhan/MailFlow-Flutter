@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/scheduled_email.dart';
 import '../utils/date_helpers.dart';
 import 'app_config.dart';
+import 'background_sync_service.dart';
 
 enum CloudStatus { connecting, connected, offline }
 
@@ -159,6 +160,7 @@ class BackendService {
       okStatuses: const {200, 201},
       errorLabel: 'Schedule failed',
     );
+    unawaited(BackgroundSyncService.scheduleCampaignWake(email));
     _changesController.add(null);
     return (data['campaignId'] ?? '').toString();
   }

@@ -56,6 +56,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       ValueNotifier<List<ScheduledEmail>>([]);
   final ValueNotifier<DateTime> _nowNotifier = ValueNotifier<DateTime>(DateTime.now());
   final Set<String> _preStartNotifiedIds = {};
+  final Set<String> _busyCampaignIds = {};
   DateTime? _lastTickDispatchAt;
   String? _pendingLaunchCampaignId;
   String? _openDetailsCampaignId;
@@ -291,56 +292,69 @@ class _DashboardScreenState extends State<DashboardScreen>
         : (draft.subject.trim().isNotEmpty ? draft.subject.trim() : 'this draft');
     final confirm = await showBlurredDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Draft?', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppTheme.errorRed.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.errorRed.withValues(alpha: 0.25)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.label_outline_rounded, size: 15, color: AppTheme.errorRed),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      label,
-                      style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.errorRed),
-                    ),
+      barrierDismissible: false,
+      builder: (ctx) {
+        bool isDeleting = false;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Delete Draft?', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppTheme.errorRed.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.errorRed.withValues(alpha: 0.25)),
                   ),
-                ],
-              ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.label_outline_rounded, size: 15, color: AppTheme.errorRed),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          label,
+                          style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.errorRed),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text('Are you sure you want to delete this draft?', style: TextStyle(fontFamily: 'Inter')),
+              ],
             ),
-            const SizedBox(height: 10),
-            const Text('Are you sure you want to delete this draft?', style: TextStyle(fontFamily: 'Inter')),
-          ],
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            actions: [
+              TextButton(
+                onPressed: isDeleting ? null : () => Navigator.pop(ctx, false),
+                child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                onPressed: isDeleting
+                    ? null
+                    : () async {
+                        setDialogState(() => isDeleting = true);
+                        if (mounted) {
+                          setState(() => _drafts.removeWhere((d) => d.id == draft.id));
+                        }
+                        await StorageService.deleteDraft(draft.id);
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      },
+                child: isDeleting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Delete', style: TextStyle(fontFamily: 'Inter', color: Colors.white)),
+              ),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(fontFamily: 'Inter', color: Colors.white)),
-          ),
-        ],
-      ),
+        );
+      },
     );
     if (confirm != true) return;
-    if (mounted) {
-      setState(() => _drafts.removeWhere((d) => d.id == draft.id));
-    }
-    await StorageService.deleteDraft(draft.id);
     await _loadDrafts();
   }
 
@@ -404,64 +418,81 @@ class _DashboardScreenState extends State<DashboardScreen>
         : (email.subject.trim().isNotEmpty ? email.subject.trim() : email.senderEmail);
     final bool? confirm = await showBlurredDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Schedule?', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppTheme.errorRed.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.errorRed.withValues(alpha: 0.25)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.label_outline_rounded, size: 15, color: AppTheme.errorRed),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      label,
-                      style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.errorRed),
-                    ),
+      barrierDismissible: false,
+      builder: (ctx) {
+        bool isDeleting = false;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Delete Schedule?', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppTheme.errorRed.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.errorRed.withValues(alpha: 0.25)),
                   ),
-                ],
-              ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.label_outline_rounded, size: 15, color: AppTheme.errorRed),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          label,
+                          style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.errorRed),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text('If you delete it, the process will be terminated and this info will be unrecoverable.', style: TextStyle(fontFamily: 'Inter')),
+              ],
             ),
-            const SizedBox(height: 10),
-            const Text('If you delete it, the process will be terminated and this info will be unrecoverable.', style: TextStyle(fontFamily: 'Inter')),
-          ],
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            actions: [
+              TextButton(
+                onPressed: isDeleting ? null : () => Navigator.pop(ctx, false),
+                child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                onPressed: isDeleting
+                    ? null
+                    : () async {
+                        setDialogState(() => isDeleting = true);
+                        if (mounted) {
+                          setState(() {
+                            _history.removeWhere((e) => e.id == email.id);
+                            _historyNotifier.value = List.of(_history);
+                          });
+                        }
+                        try {
+                          await BackendService.deleteCampaign(email.id);
+                        } catch (_) {}
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      },
+                child: isDeleting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Delete', style: TextStyle(fontFamily: 'Inter', color: Colors.white)),
+              ),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(fontFamily: 'Inter', color: Colors.white)),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm != true) return;
-    if (mounted) {
-      setState(() {
-        _history.removeWhere((e) => e.id == email.id);
-        _historyNotifier.value = List.of(_history);
-      });
-    }
-    await BackendService.deleteCampaign(email.id);
     await _loadHistory();
   }
 
   Future<void> _stopEmail(ScheduledEmail email) async {
+    if (_busyCampaignIds.contains(email.id)) return;
+    setState(() => _busyCampaignIds.add(email.id));
     final idx = _history.indexWhere((e) => e.id == email.id);
     if (idx != -1 && mounted) {
       setState(() {
@@ -469,11 +500,17 @@ class _DashboardScreenState extends State<DashboardScreen>
         _historyNotifier.value = List.of(_history);
       });
     }
-    await BackendService.pauseCampaign(email.id);
-    await _loadHistory();
+    try {
+      await BackendService.pauseCampaign(email.id);
+      await _loadHistory();
+    } finally {
+      if (mounted) setState(() => _busyCampaignIds.remove(email.id));
+    }
   }
 
   Future<void> _resumeEmail(ScheduledEmail email) async {
+    if (_busyCampaignIds.contains(email.id)) return;
+    setState(() => _busyCampaignIds.add(email.id));
     NotificationService.clearCampaignAlertState(email.id);
     final idx = _history.indexWhere((e) => e.id == email.id);
     if (idx != -1 && mounted) {
@@ -482,9 +519,13 @@ class _DashboardScreenState extends State<DashboardScreen>
         _historyNotifier.value = List.of(_history);
       });
     }
-    // testing: weekend sending enabled until user asks to restore weekday-only
-    await BackendService.resumeCampaign(email.id, forceWeekend: true);
-    await _loadHistory();
+    try {
+      // testing: weekend sending enabled until user asks to restore weekday-only
+      await BackendService.resumeCampaign(email.id, forceWeekend: true);
+      await _loadHistory();
+    } finally {
+      if (mounted) setState(() => _busyCampaignIds.remove(email.id));
+    }
   }
 
   void _showAllContacts() async {
@@ -1377,6 +1418,28 @@ class _EmailCard extends StatelessWidget {
                           ]),
                           const SizedBox(height: 2),
                           Text(item.scheduledTime, style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textMid)),
+                          if (total > 1) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              () {
+                                final gap = item.delayMinutes;
+                                if (gap <= 0) return 'Instant burst • ~1 min total';
+                                final totalMin = (total - 1) * gap;
+                                final durLabel = totalMin >= 60
+                                    ? '${totalMin ~/ 60}h ${totalMin % 60}m'
+                                    : '$totalMin min';
+                                return '${gap}m gap • Total: $durLabel';
+                              }(),
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -4582,6 +4645,7 @@ class _ResendModalState extends State<_ResendModal> {
   final _dateController = TextEditingController();
   final _timeController = TextEditingController();
   bool _isAm = true;
+  bool _isSubmitting = false;
   String? _dateMsg; bool _isDateErr = false;
 
   @override
@@ -4637,6 +4701,7 @@ class _ResendModalState extends State<_ResendModal> {
   }
 
   Future<void> _submit() async {
+    if (_isSubmitting) return;
     if (!DateHelpers.isFutureDmyTime(_dateController.text, _timeController.text, _isAm)) { _showMsg('Enter a valid future date and time.'); return; }
     
     final originalName = widget.email.scheduleName ?? 'Resend Schedule';
@@ -4657,12 +4722,15 @@ class _ResendModalState extends State<_ResendModal> {
       clearQueuedAfter: true,
     );
     
+    setState(() => _isSubmitting = true);
     try {
       await BackendService.deleteCampaign(widget.email.id);
       await BackendService.createCampaign(newEmail);
       if (mounted) Navigator.pop(context);
     } catch (e) {
       _showMsg('Backend error: $e');
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -4808,14 +4876,27 @@ class _ResendModalState extends State<_ResendModal> {
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: _submit,
+                    onPressed: _isSubmitting ? null : _submit,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primaryBlue,
                       foregroundColor: Colors.white,
                       elevation: 0,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
-                    child: const Text('Resend Schedule', style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.bold)),
+                    child: _isSubmitting
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
+                              ),
+                              SizedBox(width: 10),
+                              Text('Resending...', style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.bold)),
+                            ],
+                          )
+                        : const Text('Resend Schedule', style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],

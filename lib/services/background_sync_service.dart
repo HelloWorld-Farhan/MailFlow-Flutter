@@ -23,33 +23,45 @@ void callbackDispatcher() {
       await AppConfig.load();
       await NotificationService.initialize();
 
-      if (task == _bgWakeTaskName) {
-        try {
-          await BackendService.triggerTick();
-        } catch (_) {}
-      }
-
       try {
-        final campaigns = await BackendService.fetchCampaigns();
-        final now = DateTime.now();
-        for (final item in campaigns) {
-          if (item.status == 'Scheduled') {
-            final startDt = BackendService.parseScheduleDateTime(
-              item.scheduledDate,
-              item.scheduledTime,
-            );
-            if (startDt != null) {
-              final diffSec = startDt.difference(now).inSeconds;
-              if (diffSec > 0 && diffSec <= 90) {
-                await NotificationService.showPreStartCountdownNotification(
-                  item,
-                  diffSec.clamp(1, 60),
-                );
+        final maxCycles = task == _bgWakeTaskName ? 5 : 1;
+        for (int cycle = 0; cycle < maxCycles; cycle++) {
+          if (cycle > 0) {
+            await Future<void>.delayed(const Duration(seconds: 15));
+          }
+          if (task == _bgWakeTaskName) {
+            try {
+              await BackendService.triggerTick();
+            } catch (_) {}
+          }
+          final campaigns = await BackendService.fetchCampaigns();
+          final now = DateTime.now();
+          bool hasImminentOrActive = false;
+          for (final item in campaigns) {
+            if (SendNotificationMonitor.isActiveStatus(item.status)) {
+              hasImminentOrActive = true;
+            } else if (item.status == 'Scheduled') {
+              final startDt = BackendService.parseScheduleDateTime(
+                item.scheduledDate,
+                item.scheduledTime,
+              );
+              if (startDt != null) {
+                final diffSec = startDt.difference(now).inSeconds;
+                if (diffSec > 0 && diffSec <= 90) {
+                  hasImminentOrActive = true;
+                  await NotificationService.showPreStartCountdownNotification(
+                    item,
+                    diffSec.clamp(1, 60),
+                  );
+                } else if (diffSec <= 0 && diffSec >= -60) {
+                  hasImminentOrActive = true;
+                }
               }
             }
           }
+          await NotificationService.handleSnapshot(campaigns);
+          if (!hasImminentOrActive) break;
         }
-        await NotificationService.handleSnapshot(campaigns);
       } catch (_) {}
 
       try {
@@ -104,8 +116,9 @@ class BackgroundSyncService {
       email.scheduledTime,
     );
     if (startDt == null) return;
-    final delay = startDt.difference(DateTime.now()) - const Duration(seconds: 60);
-    if (delay.inSeconds <= 5 || delay.inDays > 7) return;
+    final rawSec = (startDt.difference(DateTime.now()) - const Duration(seconds: 60)).inSeconds;
+    if (rawSec > 7 * 86400) return;
+    final delay = Duration(seconds: rawSec < 1 ? 1 : rawSec);
     try {
       await Workmanager().registerOneOffTask(
         'campaign_wake_${email.id}',
