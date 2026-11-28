@@ -2601,6 +2601,8 @@ class _ScheduleModalState extends State<_ScheduleModal>
   final _timeController = TextEditingController();
   bool _isAm = true;
   int _delayMinutes = 2; // Default 2 min between emails (anti-spam)
+  bool _isCustomDelay = false;
+  final _customDelayController = TextEditingController();
   String? _senderMsg; bool _isSenderErr = false;
   String? _recipientMsg; bool _isRecipientErr = false;
   String? _dateMsg; bool _isDateErr = false;
@@ -2673,6 +2675,10 @@ class _ScheduleModalState extends State<_ScheduleModal>
         _dailyLimitController.text = e.dailyLimit > 0 ? e.dailyLimit.toString() : '40';
       }
       _delayMinutes = e.delayMinutes;
+      if (!const [2, 4, 6, 8].contains(_delayMinutes) && _delayMinutes > 0) {
+        _isCustomDelay = true;
+        _customDelayController.text = '$_delayMinutes';
+      }
       _scheduleNameController.text = e.scheduleName ?? '';
       _isScheduleNameDuplicate = !_isDraftNameLocked &&
           _scheduleNameController.text.trim().isNotEmpty &&
@@ -2771,6 +2777,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
     _dailyLimitController.dispose();
     _dateController.dispose();
     _timeController.dispose();
+    _customDelayController.dispose();
     super.dispose();
   }
 
@@ -4115,36 +4122,90 @@ class _ScheduleModalState extends State<_ScheduleModal>
                           ),
                           const SizedBox(height: 12),
                           Row(
-                            children: [2, 4, 6, 8, 10].map((min) {
-                              final selected = _delayMinutes == min;
-                              return Expanded(
-                                child: GestureDetector(
-                                  onTap: () => setState(() => _delayMinutes = min),
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    margin: const EdgeInsets.symmetric(horizontal: 2),
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: selected ? AppTheme.primaryBlue : AppTheme.surfaceBg(context),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: selected ? AppTheme.primaryBlue : AppTheme.border(context)),
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        Text(
+                            children: [
+                              ...[2, 4, 6, 8].map((min) {
+                                final selected = !_isCustomDelay && _delayMinutes == min;
+                                return Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => setState(() {
+                                      _isCustomDelay = false;
+                                      _delayMinutes = min;
+                                    }),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: selected ? AppTheme.primaryBlue : AppTheme.surfaceBg(context),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: selected ? AppTheme.primaryBlue : AppTheme.border(context)),
+                                      ),
+                                      child: Center(
+                                        child: Text(
                                           '${min}m',
                                           style: TextStyle(
                                             fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w700,
                                             color: selected ? Colors.white : AppTheme.textPrimary(context),
                                           ),
                                         ),
-                                      ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () => setState(() {
+                                    _isCustomDelay = true;
+                                    if (_customDelayController.text.trim().isEmpty) {
+                                      _customDelayController.text = '$_delayMinutes';
+                                    }
+                                  }),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: _isCustomDelay ? AppTheme.primaryBlue : AppTheme.surfaceBg(context),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: _isCustomDelay ? AppTheme.primaryBlue : AppTheme.border(context)),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        'Custom',
+                                        style: TextStyle(
+                                          fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w700,
+                                          color: _isCustomDelay ? Colors.white : AppTheme.textPrimary(context),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              );
-                            }).toList(),
+                              ),
+                            ],
                           ),
+                          if (_isCustomDelay) ...[
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: _customDelayController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              onChanged: (val) {
+                                final parsed = int.tryParse(val.trim());
+                                if (parsed != null && parsed >= 1 && parsed <= 120) {
+                                  setState(() => _delayMinutes = parsed);
+                                }
+                              },
+                              decoration: InputDecoration(
+                                hintText: 'Enter delay in minutes (1–120)',
+                                isDense: true,
+                                prefixIcon: const Icon(Icons.edit_calendar_outlined, size: 17),
+                                suffixText: 'min',
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
