@@ -2992,13 +2992,27 @@ class _ScheduleModalState extends State<_ScheduleModal>
                       padding: const EdgeInsets.only(bottom: 10),
                       child: TextField(
                         controller: _emailControllers[i],
+                        keyboardType: TextInputType.emailAddress,
+                        onChanged: (val) {
+                          // Auto-append a fresh row as soon as the user types in the last Multiple field.
+                          if (_sendType == 'Multiple' &&
+                              i == _emailControllers.length - 1 &&
+                              val.trim().isNotEmpty) {
+                            setState(() => _emailControllers.add(TextEditingController()));
+                          }
+                        },
                         decoration: InputDecoration(
                           hintText: 'Recipient ${i + 1} email',
                           prefixIcon: const Icon(Icons.email_outlined, size: 18),
                           suffixIcon: _sendType == 'Multiple' && _emailControllers.length > 1
                               ? IconButton(
                                   icon: const Icon(Icons.remove_circle_outline, color: AppTheme.errorRed, size: 18),
-                                  onPressed: () => setState(() => _emailControllers.removeAt(i)),
+                                  onPressed: () {
+                                    setState(() {
+                                      final removed = _emailControllers.removeAt(i);
+                                      removed.dispose();
+                                    });
+                                  },
                                 )
                               : null,
                         ),
@@ -3251,8 +3265,8 @@ class _ScheduleModalState extends State<_ScheduleModal>
                               ),
                               const Spacer(),
                               Text(
-                                _delayMinutes == 0 ? 'No delay (fastest)' : '$_delayMinutes min between each email',
-                                style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: _delayMinutes >= 2 ? AppTheme.successGreen : AppTheme.warningAmber),
+                                '$_delayMinutes min between each email',
+                                style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.successGreen),
                               ),
                             ],
                           ),
@@ -3263,7 +3277,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
                           ),
                           const SizedBox(height: 12),
                           Row(
-                            children: [0, 1, 2, 3, 5].map((min) {
+                            children: [2, 4, 6, 8, 10].map((min) {
                               final selected = _delayMinutes == min;
                               return Expanded(
                                 child: GestureDetector(
@@ -3273,17 +3287,17 @@ class _ScheduleModalState extends State<_ScheduleModal>
                                     margin: const EdgeInsets.symmetric(horizontal: 2),
                                     padding: const EdgeInsets.symmetric(vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: selected ? AppTheme.primaryBlue : AppTheme.bgSurface,
+                                      color: selected ? AppTheme.primaryBlue : AppTheme.surfaceBg(context),
                                       borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: selected ? AppTheme.primaryBlue : AppTheme.divider),
+                                      border: Border.all(color: selected ? AppTheme.primaryBlue : AppTheme.border(context)),
                                     ),
                                     child: Column(
                                       children: [
                                         Text(
-                                          min == 0 ? 'Off' : '${min}m',
+                                          '${min}m',
                                           style: TextStyle(
                                             fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w700,
-                                            color: selected ? Colors.white : AppTheme.textDark,
+                                            color: selected ? Colors.white : AppTheme.textPrimary(context),
                                           ),
                                         ),
                                       ],
@@ -3884,77 +3898,125 @@ class _AnimatedDropdownPicker extends StatelessWidget {
   });
 
   void _showPicker(BuildContext context) {
-    showModalBottomSheet(
+    showBlurredDialog(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        return Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: AppTheme.cardBg(context),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppTheme.border(context)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40, height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: AppTheme.border(context),
-                  borderRadius: BorderRadius.circular(2),
+      builder: (ctx) {
+        return Center(
+          child: Container(
+            width: min(MediaQuery.of(ctx).size.width * 0.88, 420),
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.62),
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: AppTheme.cardBg(ctx).withValues(alpha: AppTheme.isDark(ctx) ? 0.94 : 0.96),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: AppTheme.border(ctx)),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryBlue.withValues(alpha: 0.14),
+                  blurRadius: 30,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: [
+                          Icon(icon, color: AppTheme.primaryBlue, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Select ${hint.replaceAll('Select ', '')}',
+                              style: TextStyle(
+                                fontFamily: 'Outfit',
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.textPrimary(ctx),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            icon: Icon(Icons.close_rounded, size: 20, color: AppTheme.textSecondary(ctx)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(height: 1, color: AppTheme.border(ctx)),
+                    if (items.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(28),
+                        child: Text(
+                          'No saved items yet.',
+                          style: TextStyle(fontFamily: 'Inter', color: AppTheme.textSecondary(ctx)),
+                        ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          itemCount: items.length,
+                          separatorBuilder: (_, __) => Divider(height: 1, color: AppTheme.border(ctx)),
+                          itemBuilder: (context, index) {
+                            final item = items[index];
+                            final isSelected = selected == item;
+                            return ListTile(
+                              onTap: () {
+                                onSelected(item);
+                                Navigator.pop(ctx);
+                              },
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? AppTheme.primaryBlue.withValues(alpha: 0.14)
+                                      : AppTheme.surfaceBg(ctx),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  icon,
+                                  color: isSelected ? AppTheme.primaryBlue : AppTheme.textSecondary(ctx),
+                                  size: 20,
+                                ),
+                              ),
+                              title: Text(
+                                item.name,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 15,
+                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                  color: isSelected ? AppTheme.primaryBlue : AppTheme.textPrimary(ctx),
+                                ),
+                              ),
+                              trailing: isSelected
+                                  ? const Icon(Icons.check_circle_rounded, color: AppTheme.primaryBlue)
+                                  : null,
+                            );
+                          },
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              Text('Select ${hint.replaceAll('Select ', '')}', style: TextStyle(fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context))),
-              const SizedBox(height: 16),
-              if (items.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text('No saved items yet.', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textSecondary(context))),
-                )
-              else
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => Divider(height: 1, color: AppTheme.border(context)),
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      final isSelected = selected == item;
-                      return ListTile(
-                        onTap: () {
-                          onSelected(item);
-                          Navigator.pop(context);
-                        },
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: isSelected ? AppTheme.primaryBlue.withOpacity(0.1) : AppTheme.bgSurface,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(icon, color: isSelected ? AppTheme.primaryBlue : AppTheme.textLight, size: 20),
-                        ),
-                        title: Text(
-                          item.name,
-                          style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, color: isSelected ? AppTheme.primaryBlue : AppTheme.textDark),
-                        ),
-                        trailing: isSelected ? const Icon(Icons.check_circle_rounded, color: AppTheme.primaryBlue) : null,
-                      );
-                    },
-                  ),
-                ),
-            ],
+            ),
           ),
-        ).animate().slideY(begin: 1, end: 0, curve: Curves.easeOutQuart).fade();
+        ).animate().blur(begin: const Offset(6, 6), end: Offset.zero, duration: 240.ms);
       },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final hasSelection = selected != null;
     return GestureDetector(
       onTap: () {
         FocusScope.of(context).unfocus();
@@ -3963,26 +4025,31 @@ class _AnimatedDropdownPicker extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: AppTheme.bgSurface,
+          color: AppTheme.surfaceBg(context),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: selected != null ? AppTheme.primaryBlue.withOpacity(0.5) : AppTheme.divider),
+          border: Border.all(
+            color: hasSelection
+                ? AppTheme.primaryBlue.withValues(alpha: 0.5)
+                : AppTheme.border(context),
+          ),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: selected != null ? AppTheme.primaryBlue : AppTheme.textLight),
+            Icon(icon, size: 20, color: hasSelection ? AppTheme.primaryBlue : AppTheme.textSecondary(context)),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 selected?.name ?? hint,
                 style: TextStyle(
-                  fontFamily: 'Inter', fontSize: 14,
-                  fontWeight: selected != null ? FontWeight.w600 : FontWeight.w400,
-                  color: selected != null ? AppTheme.textDark : AppTheme.textMid,
+                  fontFamily: 'Inter',
+                  fontSize: 14,
+                  fontWeight: hasSelection ? FontWeight.w600 : FontWeight.w400,
+                  color: hasSelection ? AppTheme.textPrimary(context) : AppTheme.textSecondary(context),
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: AppTheme.textLight),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: AppTheme.textSecondary(context)),
           ],
         ),
       ),
