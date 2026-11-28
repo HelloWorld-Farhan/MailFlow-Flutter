@@ -51,12 +51,16 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     showBlurredDialog(
       context: context,
       builder: (dialogContext) {
-        String? bodyError;
+        String? nameError;
+        String? contentError;
         return StatefulBuilder(
           builder: (context, setModalState) {
             return Dialog(
               backgroundColor: AppTheme.cardBg(context),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+                side: BorderSide(color: AppTheme.border(context)),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: SingleChildScrollView(
@@ -71,6 +75,9 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                       const SizedBox(height: 20),
                       TextField(
                         controller: nameController,
+                        onChanged: (_) {
+                          if (nameError != null) setModalState(() => nameError = null);
+                        },
                         decoration: InputDecoration(
                           labelText: 'Template Name',
                           labelStyle: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textSecondary(context)),
@@ -79,18 +86,28 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                           fillColor: AppTheme.inputBg(context),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withValues(alpha: 0.25))),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withValues(alpha: 0.25))),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryBlue, width: 2)),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: nameError != null ? AppTheme.errorRed : AppTheme.primaryBlue.withValues(alpha: 0.25)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: nameError != null ? AppTheme.errorRed : AppTheme.primaryBlue, width: 2),
+                          ),
                         ),
                       ),
+                      if (nameError != null) ...[
+                        const SizedBox(height: 6),
+                        Text(nameError!, style: const TextStyle(color: AppTheme.errorRed, fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w600)),
+                      ],
                       const SizedBox(height: 16),
                       TextField(
                         controller: contentController,
                         minLines: type == 'Body' ? 8 : 4,
                         maxLines: type == 'Body' ? 15 : 8,
                         onChanged: (_) {
-                          if (type == 'Body' && bodyError != null) {
-                            setModalState(() => bodyError = null);
+                          if (contentError != null) {
+                            setModalState(() => contentError = null);
                           }
                         },
                         decoration: InputDecoration(
@@ -105,15 +122,15 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppTheme.primaryBlue.withValues(alpha: 0.2))),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: (type == 'Body' && bodyError != null) ? AppTheme.errorRed : AppTheme.primaryBlue.withValues(alpha: 0.2)),
+                            borderSide: BorderSide(color: contentError != null ? AppTheme.errorRed : AppTheme.primaryBlue.withValues(alpha: 0.2)),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: (type == 'Body' && bodyError != null) ? AppTheme.errorRed : AppTheme.primaryBlue, width: 2),
+                            borderSide: BorderSide(color: contentError != null ? AppTheme.errorRed : AppTheme.primaryBlue, width: 2),
                           ),
                         ),
                       ),
-                      if (type == 'Body' && bodyError != null) ...[
+                      if (contentError != null) ...[
                         const SizedBox(height: 8),
                         Container(
                           width: double.infinity,
@@ -127,7 +144,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                             children: [
                               const Icon(Icons.error_outline_rounded, color: AppTheme.errorRed, size: 16),
                               const SizedBox(width: 8),
-                              Expanded(child: Text(bodyError!, style: const TextStyle(color: AppTheme.errorRed, fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600))),
+                              Expanded(child: Text(contentError!, style: const TextStyle(color: AppTheme.errorRed, fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600))),
                             ],
                           ),
                         ),
@@ -146,10 +163,18 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                           onPressed: () async {
                             final name = nameController.text.trim();
                             final content = contentController.text;
-                            if (name.isEmpty || content.trim().isEmpty) return;
-
+                            if (name.isEmpty) {
+                              setModalState(() => nameError = 'Please enter a template name.');
+                              return;
+                            }
+                            if (content.trim().isEmpty) {
+                              setModalState(() => contentError = type == 'Subject'
+                                  ? 'Please enter a subject line.'
+                                  : 'Please enter an HTML email body.');
+                              return;
+                            }
                             if (type == 'Body' && !containsHtml(content)) {
-                              setModalState(() => bodyError = 'Body must contain valid HTML tags (e.g. <p>, <b>, <br>).');
+                              setModalState(() => contentError = 'Body must contain valid HTML tags (e.g. <p>, <b>, <br>).');
                               return;
                             }
 
@@ -169,6 +194,16 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                             if (!dialogContext.mounted) return;
                             Navigator.pop(dialogContext);
                             _loadTemplates();
+                            if (mounted) {
+                              ScaffoldMessenger.of(this.context).showSnackBar(
+                                SnackBar(
+                                  content: Text('$type template saved on device', style: const TextStyle(fontFamily: 'Inter')),
+                                  backgroundColor: AppTheme.successGreen,
+                                  behavior: SnackBarBehavior.floating,
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
                           },
                           child: Text('Save $type', style: const TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w600)),
                         ),
@@ -177,7 +212,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                   ),
                 ),
               ),
-            );
+            ).animate().blur(begin: const Offset(6, 6), end: Offset.zero, duration: 240.ms);
           },
         );
       },
@@ -297,6 +332,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         label: const Text('New Template', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
         icon: const Icon(Icons.add_rounded),
         backgroundColor: AppTheme.primaryBlue,
+        foregroundColor: Colors.white,
       ),
     );
   }

@@ -476,7 +476,35 @@ class _DashboardScreenState extends State<DashboardScreen>
                 },
               ),
               PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert_rounded, color: AppTheme.textSecondary(context), size: 22),
+                icon: ValueListenableBuilder<CloudStatus>(
+                  valueListenable: BackendService.cloudStatus,
+                  builder: (context, status, _) {
+                    final dotColor = status == CloudStatus.connected
+                        ? AppTheme.successGreen
+                        : (status == CloudStatus.connecting
+                            ? AppTheme.warningAmber
+                            : AppTheme.errorRed);
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Icon(Icons.more_vert_rounded, color: AppTheme.textSecondary(context), size: 22),
+                        Positioned(
+                          right: -1,
+                          top: -1,
+                          child: Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: dotColor,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: AppTheme.cardBg(context), width: 1),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
                 tooltip: 'More',
                 position: PopupMenuPosition.under,
                 offset: const Offset(0, 8),
@@ -491,11 +519,68 @@ class _DashboardScreenState extends State<DashboardScreen>
                   borderRadius: BorderRadius.circular(16),
                   side: BorderSide(color: AppTheme.border(context)),
                 ),
-                onSelected: (val) {
+                onSelected: (val) async {
+                  if (val == 'cloud') {
+                    final ok = await BackendService.verifyCloudConnection();
+                    if (ok) await _loadHistory();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          ok
+                              ? 'Cloud connected (24/7 Realtime active)'
+                              : 'Cloud offline — check internet connection',
+                          style: const TextStyle(fontFamily: 'Inter'),
+                        ),
+                        backgroundColor: ok ? AppTheme.successGreen : AppTheme.errorRed,
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
                   if (val == 'contacts') _showAllContacts();
                   if (val == 'settings') Navigator.push(context, BlurredPageRoute(builder: (_) => const SettingsScreen()));
                 },
                 itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'cloud',
+                    child: ValueListenableBuilder<CloudStatus>(
+                      valueListenable: BackendService.cloudStatus,
+                      builder: (context, status, _) {
+                        final isConnected = status == CloudStatus.connected;
+                        final isConnecting = status == CloudStatus.connecting;
+                        final clr = isConnected
+                            ? AppTheme.successGreen
+                            : (isConnecting ? AppTheme.warningAmber : AppTheme.errorRed);
+                        final text = isConnected
+                            ? 'Cloud Connected'
+                            : (isConnecting ? 'Connecting...' : 'Cloud Offline (Tap)');
+                        return Row(
+                          children: [
+                            Icon(
+                              isConnected
+                                  ? Icons.cloud_done_rounded
+                                  : (isConnecting ? Icons.cloud_sync_rounded : Icons.cloud_off_rounded),
+                              color: clr,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                text,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: clr,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
                   PopupMenuItem(
                     value: 'contacts',
                     child: Row(
@@ -603,19 +688,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ).animate().fade(duration: 400.ms).slideY(begin: -0.2, end: 0.0),
               ),
             ),
-
-          // ── Cloud Connection Pill ───────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: _CloudStatusBanner(
-                onReconnect: () async {
-                  await BackendService.verifyCloudConnection();
-                  await _loadHistory();
-                },
-              ),
-            ),
-          ),
 
           // ── In-App Live Sending / Parallel Activity Notification Hub ─────
           if (active.isNotEmpty || _latestAlert != null)
@@ -811,75 +883,6 @@ class _DashboardScreenState extends State<DashboardScreen>
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  HELPER WIDGETS
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-class _CloudStatusBanner extends StatelessWidget {
-  final Future<void> Function() onReconnect;
-  const _CloudStatusBanner({required this.onReconnect});
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<CloudStatus>(
-      valueListenable: BackendService.cloudStatus,
-      builder: (context, status, _) {
-        final bool isConnected = status == CloudStatus.connected;
-        final bool isConnecting = status == CloudStatus.connecting;
-        final Color clr = isConnected
-            ? AppTheme.successGreen
-            : (isConnecting ? AppTheme.warningAmber : AppTheme.errorRed);
-        final String label = isConnected
-            ? 'Cloud Connected  •  24/7 Realtime Active'
-            : (isConnecting ? 'Connecting to Cloud...' : 'Cloud Offline  •  Tap to Retry');
-
-        return GlassContainer(
-          borderRadius: 14,
-          blurSigma: 12,
-          color: clr.withValues(alpha: 0.08),
-          borderColor: clr.withValues(alpha: 0.28),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: isConnecting ? null : onReconnect,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 9,
-                      height: 9,
-                      decoration: BoxDecoration(color: clr, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: 'Inter',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: clr,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      isConnected
-                          ? Icons.cloud_done_rounded
-                          : (isConnecting ? Icons.cloud_sync_rounded : Icons.refresh_rounded),
-                      size: 16,
-                      color: clr,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ).animate().fade(duration: 280.ms).blur(begin: const Offset(4, 4), end: Offset.zero, duration: 280.ms);
-      },
-    );
-  }
-}
-
 class _RealtimeEventBanner extends StatelessWidget {
   final CampaignNotificationEvent event;
   final VoidCallback onTap;

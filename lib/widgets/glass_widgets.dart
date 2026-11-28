@@ -40,13 +40,23 @@ class AppLogo extends StatelessWidget {
             : null,
       ),
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: Image.asset(
-          'assets/Logo.png',
+        duration: const Duration(milliseconds: 340),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, anim) => FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.90, end: 1.0).animate(anim),
+            child: child,
+          ),
+        ),
+        child: ClipRRect(
           key: ValueKey(isDark),
-          fit: BoxFit.contain,
-          color: isDark ? const Color(0xFFF6ECF5) : null,
-          colorBlendMode: isDark ? BlendMode.srcIn : null,
+          borderRadius: BorderRadius.circular((borderRadius - 4).clamp(4, 24)),
+          child: Image.asset(
+            isDark ? 'assets/Black-Logo.png' : 'assets/Logo.png',
+            fit: BoxFit.contain,
+          ),
         ),
       ),
     );
@@ -151,11 +161,11 @@ Widget buildGlassAppBarBackground({Color? tint}) {
   );
 }
 
-/// Page route with animated blur-in and smooth slide+fade transition.
+/// Page route with animated blur-in and smooth scale + slide + fade transition.
 class BlurredPageRoute<T> extends PageRouteBuilder<T> {
   BlurredPageRoute({required WidgetBuilder builder})
       : super(
-          transitionDuration: const Duration(milliseconds: 340),
+          transitionDuration: const Duration(milliseconds: 360),
           reverseTransitionDuration: const Duration(milliseconds: 260),
           pageBuilder: (context, animation, secondaryAnimation) => builder(context),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -164,20 +174,23 @@ class BlurredPageRoute<T> extends PageRouteBuilder<T> {
               curve: Curves.easeOutCubic,
               reverseCurve: Curves.easeInCubic,
             );
-            final sigma = (1.0 - curved.value) * 7.0;
+            final sigma = (1.0 - curved.value) * 10.0;
             return FadeTransition(
               opacity: curved,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.03),
-                  end: Offset.zero,
-                ).animate(curved),
-                child: sigma > 0.05
-                    ? ImageFiltered(
-                        imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-                        child: child,
-                      )
-                    : child,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.03),
+                    end: Offset.zero,
+                  ).animate(curved),
+                  child: sigma > 0.05
+                      ? ImageFiltered(
+                          imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+                          child: child,
+                        )
+                      : child,
+                ),
               ),
             );
           },
