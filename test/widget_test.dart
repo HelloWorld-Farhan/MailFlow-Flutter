@@ -6,6 +6,7 @@ import 'package:mailflow/services/app_config.dart';
 import 'package:mailflow/services/backend_service.dart';
 import 'package:mailflow/services/notification_service.dart';
 import 'package:mailflow/services/storage_service.dart';
+import 'package:mailflow/main.dart';
 import 'package:mailflow/theme/app_theme.dart';
 import 'package:mailflow/widgets/glass_widgets.dart';
 import 'package:mailflow/widgets/update_dialog.dart';
@@ -291,5 +292,35 @@ void main() {
     );
     expect(snap.progress, 0.45);
     expect(snap.version, '1.1.2');
+  });
+
+  testWidgets('ThemeBlurOverlay has no active ImageFiltered blur on startup or after theme switch',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ThemeBlurOverlay(
+          isDark: false,
+          child: Scaffold(body: Text('Body')),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(ImageFiltered), findsNothing);
+
+    // Toggle brightness -> mid-transition blur should be active briefly
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ThemeBlurOverlay(
+          isDark: true,
+          child: Scaffold(body: Text('Body')),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(find.byType(ImageFiltered), findsOneWidget);
+
+    // After transition completes, ImageFiltered must be gone
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(ImageFiltered), findsNothing);
   });
 }

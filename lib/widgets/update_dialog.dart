@@ -153,58 +153,55 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-      child: Center(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.88,
-          constraints: const BoxConstraints(maxWidth: 368, maxHeight: 490),
-          margin: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(
-            color: AppTheme.cardBg(context).withValues(alpha: AppTheme.isDark(context) ? 0.92 : 0.86),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: (AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue).withValues(alpha: 0.24),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primaryBlue.withValues(alpha: 0.14),
-                blurRadius: 36,
-                offset: const Offset(0, 12),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
+    return Center(
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.88,
+        constraints: const BoxConstraints(maxWidth: 368, maxHeight: 490),
+        margin: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: AppTheme.cardBg(context).withValues(alpha: AppTheme.isDark(context) ? 0.92 : 0.86),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: (AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue).withValues(alpha: 0.24),
+            width: 1.5,
           ),
-          child: Material(
-            color: Colors.transparent,
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: 20),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      child: _buildBody(),
-                    ),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.primaryBlue.withValues(alpha: 0.14),
+              blurRadius: 36,
+              offset: const Offset(0, 12),
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(),
+                const SizedBox(height: 20),
+                Flexible(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: _buildBody(),
                   ),
-                  const SizedBox(height: 20),
-                  _buildActions(),
-                ],
-              ),
+                ),
+                const SizedBox(height: 20),
+                _buildActions(),
+              ],
             ),
           ),
         ),
-      ).animate().blur(begin: const Offset(8, 8), end: Offset.zero, duration: 280.ms),
-    );
+      ),
+    ).animate().blur(begin: const Offset(8, 8), end: Offset.zero, duration: 280.ms);
   }
 
   Widget _buildHeader() {

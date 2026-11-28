@@ -1,3 +1,4 @@
+import 'dart:math' show pi, sin;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -40,29 +41,70 @@ class MailFlowApp extends StatelessWidget {
               systemNavigationBarColor: isDark ? AppTheme.darkBg : AppTheme.bgWhite,
               systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
             ));
-            return AnimatedSwitcher(
-              duration: const Duration(milliseconds: 380),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (w, anim) {
-                final sigma = (1.0 - anim.value) * 6.0;
-                return FadeTransition(
-                  opacity: anim,
-                  child: sigma > 0.05
-                      ? ImageFiltered(
-                          imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-                          child: w,
-                        )
-                      : w,
-                );
-              },
-              child: KeyedSubtree(
-                key: ValueKey(isDark),
-                child: child ?? const SizedBox.shrink(),
-              ),
+            return ThemeBlurOverlay(
+              key: const Key('theme_blur_overlay'),
+              isDark: isDark,
+              child: child ?? const SizedBox.shrink(),
             );
           },
           home: const SplashScreen(),
+        );
+      },
+    );
+  }
+}
+
+/// Applies a brief, per-frame blur pulse only when the theme brightness actually
+/// changes, ensuring startup/restart never leaves the app blurred.
+class ThemeBlurOverlay extends StatefulWidget {
+  final bool isDark;
+  final Widget child;
+  const ThemeBlurOverlay({super.key, required this.isDark, required this.child});
+
+  @override
+  State<ThemeBlurOverlay> createState() => _ThemeBlurOverlayState();
+}
+
+class _ThemeBlurOverlayState extends State<ThemeBlurOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant ThemeBlurOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isDark != widget.isDark) {
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      child: widget.child,
+      builder: (context, child) {
+        final sigma = _controller.isAnimating
+            ? sin(_controller.value * pi) * 5.0
+            : 0.0;
+        if (sigma <= 0.05) return child!;
+        return ImageFiltered(
+          imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          child: child,
         );
       },
     );
