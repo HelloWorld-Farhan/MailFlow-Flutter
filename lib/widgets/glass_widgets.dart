@@ -161,12 +161,13 @@ Widget buildGlassAppBarBackground({Color? tint}) {
   );
 }
 
-/// Page route with animated blur-in and smooth scale + slide + fade transition.
+/// Page route with opaque scaffold backing, blur-in, and smooth slide + fade transition.
 class BlurredPageRoute<T> extends PageRouteBuilder<T> {
   BlurredPageRoute({required WidgetBuilder builder})
       : super(
-          transitionDuration: const Duration(milliseconds: 360),
-          reverseTransitionDuration: const Duration(milliseconds: 260),
+          opaque: true,
+          transitionDuration: const Duration(milliseconds: 240),
+          reverseTransitionDuration: const Duration(milliseconds: 200),
           pageBuilder: (context, animation, secondaryAnimation) => builder(context),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             final curved = CurvedAnimation(
@@ -174,14 +175,15 @@ class BlurredPageRoute<T> extends PageRouteBuilder<T> {
               curve: Curves.easeOutCubic,
               reverseCurve: Curves.easeInCubic,
             );
-            final sigma = (1.0 - curved.value) * 10.0;
-            return FadeTransition(
-              opacity: curved,
-              child: ScaleTransition(
-                scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
+            final sigma = (1.0 - curved.value) * 6.0;
+            // Opaque backing prevents the previous route from bleeding through during fade/blur.
+            return ColoredBox(
+              color: AppTheme.scaffoldBg(context),
+              child: FadeTransition(
+                opacity: curved,
                 child: SlideTransition(
                   position: Tween<Offset>(
-                    begin: const Offset(0, 0.03),
+                    begin: const Offset(0.03, 0),
                     end: Offset.zero,
                   ).animate(curved),
                   child: sigma > 0.05
@@ -197,7 +199,7 @@ class BlurredPageRoute<T> extends PageRouteBuilder<T> {
         );
 }
 
-/// Opens a dialog over an animated frosted-blur backdrop with scale + fade entrance.
+/// Opens a dialog over a fast, lag-free translucent scrim with scale + fade entrance.
 Future<T?> showBlurredDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -207,37 +209,21 @@ Future<T?> showBlurredDialog<T>({
     context: context,
     barrierDismissible: barrierDismissible,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    barrierColor: Colors.transparent,
-    transitionDuration: const Duration(milliseconds: 280),
+    barrierColor: Colors.black.withValues(alpha: 0.45),
+    transitionDuration: const Duration(milliseconds: 180),
     pageBuilder: (ctx, animation, secondaryAnimation) => builder(ctx),
     transitionBuilder: (ctx, animation, secondaryAnimation, child) {
       final curved = CurvedAnimation(
         parent: animation,
-        curve: Curves.easeOutBack,
-        reverseCurve: Curves.easeIn,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
       );
-      final blur = (animation.value * 9.0).clamp(0.0, 9.0);
-      return Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: barrierDismissible ? () => Navigator.of(ctx).maybePop() : null,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.26 * animation.value),
-                ),
-              ),
-            ),
-          ),
-          FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.92, end: 1.0).animate(curved),
-              child: child,
-            ),
-          ),
-        ],
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
+          child: child,
+        ),
       );
     },
   );

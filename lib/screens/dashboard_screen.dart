@@ -41,6 +41,8 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen>
     with WidgetsBindingObserver {
   List<ScheduledEmail> _history = [];
+  List<ScheduledEmail> _drafts = [];
+  int _selectedTab = 0; // 0: Ongoing, 1: Completed, 2: Drafts
   bool _isLoading = true;
   int _totalDailySent = 0;
 
@@ -72,6 +74,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _pendingLaunchCampaignId = NotificationService.consumeInitialCampaignId();
     _notifTapSub = NotificationService.onNotificationTap.listen(_openCampaignById);
     _checkPermissions();
+    _loadDrafts();
     _loadHistory();
     _initVersionAndCheckUpdate();
     _realtimeSub = BackendService.onDataChanged.listen((_) => _loadHistory());
@@ -263,20 +266,32 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
+  Future<void> _loadDrafts() async {
+    final drafts = await StorageService.getDrafts();
+    if (mounted) setState(() => _drafts = drafts);
+  }
+
+  Future<void> _deleteDraft(String id) async {
+    await StorageService.deleteDraft(id);
+    await _loadDrafts();
+  }
+
   Future<void> _loadHistory() async {
     try {
-      final (history, limitsMap) = await (
+      final (history, limitsMap, drafts) = await (
         BackendService.fetchCampaigns(),
         BackendService.fetchDailyLimits(),
+        StorageService.getDrafts(),
       ).wait;
       final totalSent = limitsMap.values.fold<int>(0, (sum, val) => sum + val);
+      if (mounted) _drafts = drafts;
       await _applyLoadedHistory(history, totalSent);
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _openScheduleModal({ScheduledEmail? existingEmail}) {
+  void _openScheduleModal({ScheduledEmail? existingEmail, bool isDraft = false}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -285,9 +300,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       useSafeArea: true,
       builder: (context) => ResponsiveCenter(
         maxWidth: 640,
-        child: _ScheduleModal(editEmail: existingEmail),
+        child: _ScheduleModal(editEmail: existingEmail, isDraft: isDraft),
       ),
-    );
+    ).then((_) => _loadDrafts());
   }
 
   void _openResendModal(ScheduledEmail email) {
@@ -414,11 +429,17 @@ class _DashboardScreenState extends State<DashboardScreen>
     final now = DateTime.now();
     final active = <ScheduledEmail>[];
     final preStart = <ScheduledEmail>[];
+    final ongoingList = <ScheduledEmail>[];
+    final completedList = <ScheduledEmail>[];
     for (final e in _history) {
       if (e.status == 'Success') {
         sentCount++;
+        completedList.add(e);
+      } else if (e.status.startsWith('Failed')) {
+        completedList.add(e);
       } else {
-        if (!e.status.startsWith('Failed')) scheduledCount++;
+        scheduledCount++;
+        ongoingList.add(e);
         if (SendNotificationMonitor.isActiveStatus(e.status)) {
           active.add(e);
         } else if (e.status == 'Scheduled') {
@@ -431,6 +452,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       }
     }
     final liveItems = [...active, ...preStart];
+    final displayedList = _selectedTab == 0
+        ? ongoingList
+        : (_selectedTab == 1 ? completedList : _drafts);
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg(context),
@@ -889,72 +913,108 @@ class _DashboardScreenState extends State<DashboardScreen>
                     label: 'Total Per Day',
                     value: '$_totalDailySent',
                     color: _totalDailySent >= 150 ? AppTheme.errorRed : (_totalDailySent >= 100 ? AppTheme.warningAmber : AppTheme.textMid),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmailLimitScreen())),
+                    onTap: () => Navigator.push(context, BlurredPageRoute(builder: (_) => const EmailLimitScreen())),
                   ),
                 ],
               ).animate(delay: 200.ms).fade(duration: 400.ms),
             ),
           ),
 
-          // â”€â”€ Section title â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+          // Animated Category Tabs (Ongoing / Completed / Drafts)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-              child: Row(
-                children: [
-                  const Text(
-                    'Scheduled Emails',
-                    style: TextStyle(
-                      fontFamily: 'Outfit', fontSize: 17, fontWeight: FontWeight.w700,
-                      color: AppTheme.textDark,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${_history.length} total',
-                    style: const TextStyle(
-                      fontFamily: 'Inter', fontSize: 13, color: AppTheme.textLight,
-                    ),
-                  ),
-                ],
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceBg(context),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppTheme.border(context)),
+                ),
+                child: Row(
+                  children: [
+                    _buildTabChip(0, 'Ongoing', ongoingList.length),
+                    _buildTabChip(1, 'Completed', completedList.length),
+                    _buildTabChip(2, 'Drafts', _drafts.length),
+                  ],
+                ),
               ),
             ),
           ),
 
-          // â”€â”€ Email list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-          _isLoading
+          // Email list
+          _isLoading && _selectedTab != 2
               ? const SliverFillRemaining(
                   child: Center(child: CircularProgressIndicator()),
                 )
-              : _history.isEmpty
+              : displayedList.isEmpty
                   ? SliverFillRemaining(
-                      child: _EmptyState(onTap: () => _openScheduleModal()),
+                      child: _selectedTab == 2
+                          ? Center(
+                              child: Text(
+                                'No saved drafts yet',
+                                style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textSecondary(context)),
+                              ),
+                            )
+                          : _EmptyState(onTap: () => _openScheduleModal()),
                     )
                   : SliverPadding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                       sliver: SliverList(
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
-                            final item = _history[index];
+                            final item = displayedList[index];
+                            final isDraftTab = _selectedTab == 2;
                             return _EmailCard(
                               item: item,
                               index: index,
-                              nowNotifier: _nowNotifier,
-                              onTap: () => _showEmailDetails(item),
-                              onEdit: () => _openScheduleModal(existingEmail: item),
+                              nowNotifier: isDraftTab ? null : _nowNotifier,
+                              onTap: () => isDraftTab
+                                  ? _openScheduleModal(existingEmail: item, isDraft: true)
+                                  : _showEmailDetails(item),
+                              onEdit: () => _openScheduleModal(existingEmail: item, isDraft: isDraftTab),
                               onResend: () => _openResendModal(item),
-                              onDelete: () => _deleteEmail(item.id),
+                              onDelete: () => isDraftTab ? _deleteDraft(item.id) : _deleteEmail(item.id),
                               onStop: () => _stopEmail(item),
                               onResume: () => _resumeEmail(item),
                             );
                           },
-                          childCount: _history.length,
+                          childCount: displayedList.length,
                         ),
                       ),
                     ),
         ],
       ),
     ),
+    );
+  }
+
+  Widget _buildTabChip(int index, String label, int count) {
+    final selected = _selectedTab == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedTab = index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.primaryBlue : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Center(
+            child: Text(
+              '$label ($count)',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                color: selected ? Colors.white : AppTheme.textSecondary(context),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1948,17 +2008,12 @@ class _DetailsDialog extends StatefulWidget {
 }
 
 class _DetailsDialogState extends State<_DetailsDialog> {
-  bool _showBody = false;
-  late bool _showRecipients;
-
-  @override
-  void initState() {
-    super.initState();
-    _showRecipients = SendNotificationMonitor.isActiveStatus(widget.email.status);
-  }
+  String? _activePanel; // null = summary, 'body' = Body, 'recipients' = Recipients
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final popupHeight = (screenSize.height * 0.64).clamp(380.0, 560.0);
     return ValueListenableBuilder<List<ScheduledEmail>>(
       valueListenable: widget.historyNotifier,
       builder: (context, history, _) {
@@ -1991,242 +2046,261 @@ class _DetailsDialogState extends State<_DetailsDialog> {
             ),
           ),
           elevation: 8,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 420,
-              maxHeight: MediaQuery.of(context).size.height * 0.72,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Status bar at top of popup
-                    if (widget.nowNotifier != null)
-                      _CountdownBanner(item: email, nowNotifier: widget.nowNotifier!),
-                    if (isActive && total > 0) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Live Sending Progress',
-                            style: TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primaryBlue),
+          child: SizedBox(
+            width: 420,
+            height: popupHeight,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 240),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.10),
+                      end: Offset.zero,
+                    ).animate(anim),
+                    child: child,
+                  ),
+                ),
+                child: _activePanel == 'body'
+                    ? _buildSubPanel(
+                        key: const ValueKey('body'),
+                        title: 'Email Body',
+                        icon: Icons.article_outlined,
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.all(14),
+                          child: SelectableText(
+                            email.body.isEmpty ? '(Empty body)' : email.body,
+                            style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context), height: 1.45),
                           ),
-                          Text(
-                            '$sent / $total (${(progress * 100).toStringAsFixed(0)}%)',
-                            style: const TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: LinearProgressIndicator(
-                          value: progress > 0 ? progress : null,
-                          backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.14),
-                          valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
-                          minHeight: 6,
                         ),
-                      ),
-                    ],
-                    if (isRunningOrStarting) const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                (email.scheduleName != null && email.scheduleName!.isNotEmpty)
-                                    ? email.scheduleName!
-                                    : 'Schedule Details',
-                                style: TextStyle(fontFamily: 'Outfit', fontSize: 19, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
-                              ),
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 4,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.primaryBlue.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      email.isMerged ? 'Merged PDF' : email.type,
-                                      style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold),
-                                    ),
+                      ).animate().blur(begin: const Offset(6, 6), end: Offset.zero, duration: 220.ms)
+                    : _activePanel == 'recipients'
+                        ? _buildSubPanel(
+                            key: const ValueKey('recipients'),
+                            title: 'Recipients (${email.recipients.length})',
+                            icon: Icons.group_rounded,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: email.recipients.length,
+                              itemBuilder: (ctx, idx) {
+                                final r = email.recipients[idx];
+                                final rStatus = email.recipientStatuses[r];
+                                IconData icon;
+                                Color color;
+                                if (rStatus == 'sent' || (rStatus == null && email.status == 'Success')) {
+                                  icon = Icons.check_circle_rounded; color = AppTheme.successGreen;
+                                } else if (rStatus == 'inProcess') {
+                                  icon = Icons.sync_rounded; color = AppTheme.primaryBlue;
+                                } else if (rStatus != null && rStatus.startsWith('failed')) {
+                                  icon = Icons.cancel_rounded; color = AppTheme.errorRed;
+                                } else {
+                                  icon = Icons.radio_button_unchecked_rounded; color = AppTheme.textLight;
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 28, height: 28,
+                                        decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
+                                        child: Icon(icon, size: 16, color: color),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(r, style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context))),
+                                      ),
+                                    ],
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: statusColor.withValues(alpha: 0.12),
+                                );
+                              },
+                            ),
+                          ).animate().blur(begin: const Offset(6, 6), end: Offset.zero, duration: 220.ms)
+                        : Padding(
+                            key: const ValueKey('summary'),
+                            padding: const EdgeInsets.all(20),
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (widget.nowNotifier != null)
+                                    _CountdownBanner(item: email, nowNotifier: widget.nowNotifier!),
+                                  if (isActive && total > 0) ...[
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text('Live Sending Progress', style: TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primaryBlue)),
+                                        Text('$sent / $total (${(progress * 100).toStringAsFixed(0)}%)', style: const TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    ClipRRect(
                                       borderRadius: BorderRadius.circular(6),
+                                      child: LinearProgressIndicator(
+                                        value: progress > 0 ? progress : null,
+                                        backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.14),
+                                        valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
+                                        minHeight: 6,
+                                      ),
                                     ),
-                                    child: Text(
-                                      email.status,
-                                      style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: statusColor, fontWeight: FontWeight.w700),
+                                  ],
+                                  if (isRunningOrStarting) const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              (email.scheduleName != null && email.scheduleName!.isNotEmpty) ? email.scheduleName! : 'Schedule Details',
+                                              style: TextStyle(fontFamily: 'Outfit', fontSize: 19, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Wrap(
+                                              spacing: 6,
+                                              runSpacing: 4,
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                  decoration: BoxDecoration(color: AppTheme.primaryBlue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
+                                                  child: Text(email.isMerged ? 'Merged PDF' : email.type, style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold)),
+                                                ),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                  decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
+                                                  child: Text(email.status, style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: statusColor, fontWeight: FontWeight.w700)),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 14),
+                                  _infoRow(Icons.account_circle_outlined, 'Sender', email.senderEmail),
+                                  if (!isRunningOrStarting) ...[
+                                    if (email.createdAt != null) _infoRow(Icons.add_task_rounded, 'Created On', email.createdAt!),
+                                    Builder(builder: (context) {
+                                      final wd = DateHelpers.weekdayName(email.scheduledDate);
+                                      return _infoRow(Icons.calendar_today_rounded, 'Date', '${email.scheduledDate}${wd.isNotEmpty ? ' ($wd)' : ''}');
+                                    }),
+                                    _infoRow(Icons.access_time_rounded, 'Time', email.scheduledTime),
+                                    if (email.type == 'PDF' || email.isMerged)
+                                      _infoRow(Icons.speed_rounded, 'Daily Limit', '${email.dailyLimit > 0 ? email.dailyLimit : 40} emails / day'),
+                                  ],
+                                  if (email.type == 'Multiple' || email.type == 'PDF' || email.isMerged)
+                                    _infoRow(Icons.timer_outlined, 'Delay', '${email.delayMinutes} min between emails'),
+                                  if (!isRunningOrStarting) ...[
+                                    _infoRow(Icons.subject_rounded, 'Subject', email.subject.isEmpty ? '(No Subject)' : email.subject),
+                                    const SizedBox(height: 8),
+                                    _panelTrigger(
+                                      icon: Icons.article_outlined,
+                                      label: 'Body',
+                                      onTap: () => setState(() => _activePanel = 'body'),
                                     ),
+                                    const SizedBox(height: 10),
+                                  ],
+                                  _panelTrigger(
+                                    icon: Icons.group_rounded,
+                                    label: 'Recipients (${email.recipients.length})',
+                                    highlighted: true,
+                                    onTap: () => setState(() => _activePanel = 'recipients'),
                                   ),
                                 ],
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                        IconButton(icon: const Icon(Icons.close, color: AppTheme.textMid), onPressed: () => Navigator.pop(context)),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    _infoRow(Icons.account_circle_outlined, 'Sender', email.senderEmail),
-                    if (!isRunningOrStarting) ...[
-                      if (email.createdAt != null)
-                        _infoRow(Icons.add_task_rounded, 'Created On', email.createdAt!),
-                      Builder(builder: (context) {
-                        final wd = DateHelpers.weekdayName(email.scheduledDate);
-                        final suffix = wd.isNotEmpty ? ' ($wd)' : '';
-                        return _infoRow(Icons.calendar_today_rounded, 'Date', '${email.scheduledDate}$suffix');
-                      }),
-                      _infoRow(Icons.access_time_rounded, 'Time', email.scheduledTime),
-                      if (email.type == 'PDF' || email.isMerged)
-                        _infoRow(Icons.speed_rounded, 'Daily Limit', '${email.dailyLimit > 0 ? email.dailyLimit : 40} emails / day'),
-                    ],
-                    if (email.type == 'Multiple' || email.type == 'PDF' || email.isMerged)
-                      _infoRow(Icons.timer_outlined, 'Delay', '${email.delayMinutes} min between emails'),
-                    if (!isRunningOrStarting) ...[
-                      _infoRow(Icons.subject_rounded, 'Subject', email.subject.isEmpty ? '(No Subject)' : email.subject),
-                      const SizedBox(height: 8),
-                      // Collapsible Body Section
-                      GestureDetector(
-                        onTap: () => setState(() => _showBody = !_showBody),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: AppTheme.surfaceBg(context),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppTheme.border(context)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.article_outlined, size: 18, color: AppTheme.primaryBlue),
-                              const SizedBox(width: 10),
-                              const Expanded(
-                                child: Text(
-                                  'Body',
-                                  style: TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
-                                ),
-                              ),
-                              Icon(
-                                _showBody ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                color: AppTheme.textSecondary(context), size: 20,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (_showBody) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(color: AppTheme.surfaceBg(context), borderRadius: BorderRadius.circular(12)),
-                          child: Text(email.body.isEmpty ? '(Empty body)' : email.body, style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppTheme.textPrimary(context))),
-                        ),
-                      ],
-                    ],
-                    const SizedBox(height: 12),
-              // Collapsible Recipients Section
-              GestureDetector(
-                onTap: () => setState(() => _showRecipients = !_showRecipients),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryBlue.withOpacity(0.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.group_rounded, size: 18, color: AppTheme.primaryBlue),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Recipients (${email.recipients.length})',
-                          style: const TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue),
-                        ),
-                      ),
-                      Icon(
-                        _showRecipients ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                        color: AppTheme.primaryBlue, size: 20,
-                      ),
-                    ],
-                  ),
-                ),
               ),
-              if (_showRecipients) ...[
-                const SizedBox(height: 8),
-                Container(
-                  height: MediaQuery.of(context).size.height * 0.35,
-                  decoration: BoxDecoration(
-                    color: AppTheme.bgSurface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.divider),
-                  ),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: email.recipients.length,
-                    itemBuilder: (ctx, idx) {
-                      final r = email.recipients[idx];
-                      final rStatus = email.recipientStatuses[r];
-                      IconData icon;
-                      Color color;
-                      if (rStatus == 'sent' || (rStatus == null && email.status == 'Success')) {
-                        icon = Icons.check_circle_rounded; color = AppTheme.successGreen;
-                      } else if (rStatus == 'inProcess') {
-                        icon = Icons.sync_rounded; color = AppTheme.primaryBlue;
-                      } else if (rStatus != null && rStatus.startsWith('failed')) {
-                        icon = Icons.cancel_rounded; color = AppTheme.errorRed;
-                      } else {
-                        icon = Icons.radio_button_unchecked_rounded; color = AppTheme.textLight;
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 5),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 28, height: 28,
-                              decoration: BoxDecoration(
-                                color: color.withOpacity(0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(icon, size: 16, color: color),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                r,
-                                style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context), height: 1.3),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _panelTrigger({
+    required IconData icon,
+    required String label,
+    bool highlighted = false,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: highlighted ? AppTheme.primaryBlue.withValues(alpha: 0.06) : AppTheme.surfaceBg(context),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: highlighted ? AppTheme.primaryBlue.withValues(alpha: 0.3) : AppTheme.border(context)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: AppTheme.primaryBlue),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(label, style: const TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue)),
+            ),
+            const Icon(Icons.open_in_full_rounded, color: AppTheme.primaryBlue, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubPanel({
+    required Key key,
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.primaryBlue),
+                onPressed: () => setState(() => _activePanel = null),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              const SizedBox(width: 10),
+              Icon(icon, size: 18, color: AppTheme.primaryBlue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(title, style: TextStyle(fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context))),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: AppTheme.textMid),
+                onPressed: () => Navigator.pop(context),
+              ),
             ],
           ),
-        ),
-        ),
-        ),
-        ).animate().scale(duration: 220.ms, curve: Curves.easeOutBack).fade();
-      },
+          const SizedBox(height: 10),
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceBg(context),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.border(context)),
+              ),
+              child: child,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2254,7 +2328,8 @@ class _DetailsDialogState extends State<_DetailsDialog> {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _ScheduleModal extends StatefulWidget {
   final ScheduledEmail? editEmail;
-  const _ScheduleModal({this.editEmail});
+  final bool isDraft;
+  const _ScheduleModal({this.editEmail, this.isDraft = false});
 
   @override
   State<_ScheduleModal> createState() => _ScheduleModalState();
@@ -2312,6 +2387,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
   int _currentSenderUsage = 0;
   bool _dateQuotaFull = false;
   bool _isSubmitting = false;
+  bool _savedOrSubmitted = false;
   Timer? _senderLookupDebounce;
 
   @override
@@ -2693,10 +2769,14 @@ class _ScheduleModalState extends State<_ScheduleModal>
 
     setState(() => _isSubmitting = true);
     try {
-      if (widget.editEmail != null) {
+      if (widget.editEmail != null && !widget.isDraft) {
         await BackendService.deleteCampaign(widget.editEmail!.id);
       }
       await BackendService.createCampaign(newEmail);
+      _savedOrSubmitted = true;
+      if (widget.isDraft && widget.editEmail != null) {
+        unawaited(StorageService.deleteDraft(widget.editEmail!.id));
+      }
       if (mounted) Navigator.pop(context);
     } catch (e) {
       _showMsg('date', 'Backend error: $e');
@@ -2879,9 +2959,65 @@ class _ScheduleModalState extends State<_ScheduleModal>
     await BackendService.createCampaign(merged);
   }
 
+  void _autoSaveDraftIfNeeded() {
+    if (widget.editEmail != null && !widget.isDraft) return;
+    final sender = _senderController.text.trim();
+    final name = _scheduleNameController.text.trim();
+    final subject = _useSavedFormat
+        ? (_selectedSubject?.content ?? '')
+        : _subjectController.text;
+    final body = _useSavedFormat
+        ? (_selectedBody?.content ?? '')
+        : _bodyController.text;
+    final recipients = _sendType == 'PDF'
+        ? _pdfEmails.toSet().toList()
+        : _emailControllers
+            .map((c) => c.text.trim())
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList();
+
+    final hasAnyContent = name.isNotEmpty ||
+        sender.isNotEmpty ||
+        recipients.isNotEmpty ||
+        subject.trim().isNotEmpty ||
+        body.trim().isNotEmpty;
+    if (!hasAnyContent) return;
+
+    final draft = ScheduledEmail(
+      id: widget.isDraft && widget.editEmail != null
+          ? widget.editEmail!.id
+          : 'draft_${DateTime.now().millisecondsSinceEpoch}',
+      senderEmail: sender,
+      type: _sendType,
+      recipients: recipients,
+      subject: subject,
+      body: body,
+      scheduledDate: _dateController.text.trim().isNotEmpty
+          ? _dateController.text.trim()
+          : DateHelpers.todayDmy(),
+      scheduledTime: _timeController.text.trim().isNotEmpty
+          ? '${_timeController.text.trim()} ${_isAm ? "AM" : "PM"}'
+          : '12:00 PM',
+      status: 'Draft',
+      scheduleName: name,
+      pdfName: _sendType == 'PDF' ? _pdfPath : null,
+      dailyLimit: int.tryParse(_dailyLimitController.text.trim()) ?? 40,
+      delayMinutes: _delayMinutes,
+      forceWeekend: true,
+    );
+    unawaited(StorageService.saveDraft(draft));
+  }
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop && !_savedOrSubmitted) {
+          _autoSaveDraftIfNeeded();
+        }
+      },
+      child: GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
       child: Container(
@@ -3217,7 +3353,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
                   Row(
                     children: ['Single', 'Multiple', 'PDF'].map((type) {
                       final sel = _sendType == type;
-                      final isEditLocked = widget.editEmail != null;
+                      final isEditLocked = widget.editEmail != null && !widget.isDraft;
                       return Expanded(
                         child: GestureDetector(
                           onTap: isEditLocked ? null : () => setState(() => _sendType = type),
@@ -3779,7 +3915,8 @@ class _ScheduleModalState extends State<_ScheduleModal>
         ],
       ),
       ), // closes GestureDetector child: Container
-    ); // closes GestureDetector
+      ), // closes GestureDetector
+    ); // closes PopScope
   }
 }
 

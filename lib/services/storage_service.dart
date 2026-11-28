@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/scheduled_email.dart';
 import '../models/template_item.dart';
 
 /// Saved contact entry with the schedule types where it was used (`Single`, `Multiple`, `PDF`).
@@ -17,6 +18,7 @@ class StorageService {
   static const String _contactsSourcesKey = 'saved_contacts_sources';
   static const String _dailyLimitsHistoryKey = 'saved_daily_limits_history';
   static const String _templatesKey = 'saved_templates';
+  static const String _draftsKey = 'saved_schedule_drafts';
   static const String _themeModeKey = 'theme_mode';
 
   static Future<ThemeMode> getThemeMode() async {
@@ -178,5 +180,39 @@ class StorageService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(_templatesKey, templates.map((t) => t.toJson()).toList());
     }
+  }
+
+  /// Loads locally saved incomplete schedule drafts.
+  static Future<List<ScheduledEmail>> getDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_draftsKey) ?? [];
+    final drafts = <ScheduledEmail>[];
+    for (final s in raw) {
+      try {
+        drafts.add(ScheduledEmail.fromJson(s));
+      } catch (_) {}
+    }
+    return drafts;
+  }
+
+  /// Saves or updates an incomplete schedule draft on the device.
+  static Future<void> saveDraft(ScheduledEmail draft) async {
+    final drafts = await getDrafts();
+    final idx = drafts.indexWhere((d) => d.id == draft.id);
+    if (idx != -1) {
+      drafts[idx] = draft;
+    } else {
+      drafts.insert(0, draft);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_draftsKey, drafts.map((d) => d.toJson()).toList());
+  }
+
+  /// Deletes a saved draft by ID.
+  static Future<void> deleteDraft(String id) async {
+    final drafts = await getDrafts();
+    drafts.removeWhere((d) => d.id == id);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_draftsKey, drafts.map((d) => d.toJson()).toList());
   }
 }

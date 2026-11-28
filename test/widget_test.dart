@@ -329,4 +329,32 @@ void main() {
     expect(DateHelpers.isWeekendDmy('29/11/2026'), isTrue); // Sunday
     expect(DateHelpers.isWeekendDmy('30/11/2026'), isFalse); // Monday
   });
+
+  test('StorageService saves, loads, updates, and deletes schedule drafts locally', () async {
+    SharedPreferences.setMockInitialValues({});
+    final draft = ScheduledEmail(
+      id: 'draft_1',
+      senderEmail: 'sender@gmail.com',
+      type: 'Multiple',
+      recipients: ['a@test.com', 'b@test.com'],
+      subject: 'Draft Subject',
+      body: '<p>Hello</p>',
+      scheduledDate: '28/11/2026',
+      scheduledTime: '03:00 PM',
+      status: 'Draft',
+      scheduleName: 'My Draft',
+    );
+    await StorageService.saveDraft(draft);
+    var loaded = await StorageService.getDrafts();
+    expect(loaded.length, 1);
+    expect(loaded.first.scheduleName, 'My Draft');
+
+    await StorageService.saveDraft(draft.copyWith(subject: 'Updated Draft'));
+    loaded = await StorageService.getDrafts();
+    expect(loaded.length, 1);
+    expect(loaded.first.subject, 'Updated Draft');
+
+    await StorageService.deleteDraft('draft_1');
+    expect(await StorageService.getDrafts(), isEmpty);
+  });
 }
