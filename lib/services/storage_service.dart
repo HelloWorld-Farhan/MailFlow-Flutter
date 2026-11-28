@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scheduled_email.dart';
 import '../models/template_item.dart';
+import '../utils/date_helpers.dart';
 
 /// Saved contact entry with the schedule types where it was used (`Single`, `Multiple`, `PDF`).
 class SavedContact {
   final String email;
   final Set<String> sources;
-  const SavedContact({required this.email, required this.sources});
+  final String? savedDate;
+  const SavedContact({required this.email, required this.sources, this.savedDate});
 }
 
 /// Local persistence for sender autocomplete history, extracted contacts, templates, and theme preference.
@@ -16,6 +18,7 @@ class StorageService {
   static const String _sendersKey = 'saved_senders';
   static const String _contactsKey = 'saved_contacts';
   static const String _contactsSourcesKey = 'saved_contacts_sources';
+  static const String _contactsDatesKey = 'saved_contacts_dates';
   static const String _dailyLimitsHistoryKey = 'saved_daily_limits_history';
   static const String _templatesKey = 'saved_templates';
   static const String _draftsKey = 'saved_schedule_drafts';
@@ -44,10 +47,15 @@ class StorageService {
   }
 
   static Future<void> saveSenderEmail(String email) async {
+    final normalized = email.trim().toLowerCase();
+    if (normalized.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
-    final senders = prefs.getStringList(_sendersKey) ?? [];
-    if (!senders.contains(email)) {
-      senders.add(email);
+    final senders = (prefs.getStringList(_sendersKey) ?? [])
+        .map((e) => e.trim().toLowerCase())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (!senders.contains(normalized)) {
+      senders.add(normalized);
       await prefs.setStringList(_sendersKey, senders);
     }
   }
@@ -60,7 +68,7 @@ class StorageService {
   static Future<void> saveExtractedEmails(List<String> newEmails, {String source = 'PDF'}) =>
       saveContacts(newEmails, source: source);
 
-  /// Saves emails normalized to lowercase and tags each with its source (`Single`, `Multiple`, `PDF`).
+  /// Saves emails normalized to lowercase and tags each with its source (`Single`, `Multiple`, `PDF`) and date.
   static Future<void> saveContacts(List<String> newEmails, {required String source}) async {
     if (newEmails.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
@@ -73,20 +81,31 @@ class StorageService {
         meta[entry.key] = Set<String>.from((entry.value as List).map((e) => e.toString()));
       }
     }
+    final rawDates = prefs.getString(_contactsDatesKey);
+    final Map<String, String> dates = {};
+    if (rawDates != null && rawDates.isNotEmpty) {
+      final decoded = jsonDecode(rawDates) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        dates[entry.key] = entry.value.toString();
+      }
+    }
+    final today = DateHelpers.todayDmy();
     for (final raw in newEmails) {
       final email = raw.trim().toLowerCase();
       if (email.isEmpty) continue;
       contacts.add(email);
       meta.putIfAbsent(email, () => <String>{}).add(source);
+      dates[email] = today;
     }
     await prefs.setStringList(_contactsKey, contacts.toList());
     await prefs.setString(
       _contactsSourcesKey,
       jsonEncode(meta.map((k, v) => MapEntry(k, v.toList()))),
     );
+    await prefs.setString(_contactsDatesKey, jsonEncode(dates));
   }
 
-  /// Returns all saved contacts with their source tags (`Single`, `Multiple`, `PDF`).
+  /// Returns all saved contacts with their source tags (`Single`, `Multiple`, `PDF`) and saved date.
   static Future<List<SavedContact>> getContactsWithSources() async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList(_contactsKey) ?? [];
@@ -98,12 +117,20 @@ class StorageService {
         meta[entry.key] = Set<String>.from((entry.value as List).map((e) => e.toString()));
       }
     }
+    final rawDates = prefs.getString(_contactsDatesKey);
+    final Map<String, String> dates = {};
+    if (rawDates != null && rawDates.isNotEmpty) {
+      final decoded = jsonDecode(rawDates) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        dates[entry.key] = entry.value.toString();
+      }
+    }
     final seen = <String>{};
     final result = <SavedContact>[];
     for (final raw in [...list, ...meta.keys]) {
       final email = raw.trim().toLowerCase();
       if (email.isEmpty || !seen.add(email)) continue;
-      result.add(SavedContact(email: email, sources: meta[email] ?? <String>{}));
+      result.add(SavedContact(email: email, sources: meta[email] ?? <String>{}, savedDate: dates[email]));
     }
     return result;
   }
@@ -121,6 +148,12 @@ class StorageService {
       final decoded = jsonDecode(rawMeta) as Map<String, dynamic>;
       decoded.remove(normalized);
       await prefs.setString(_contactsSourcesKey, jsonEncode(decoded));
+    }
+    final rawDates = prefs.getString(_contactsDatesKey);
+    if (rawDates != null && rawDates.isNotEmpty) {
+      final decoded = jsonDecode(rawDates) as Map<String, dynamic>;
+      decoded.remove(normalized);
+      await prefs.setString(_contactsDatesKey, jsonEncode(decoded));
     }
   }
 

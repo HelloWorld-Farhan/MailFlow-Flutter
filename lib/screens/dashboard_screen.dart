@@ -1622,8 +1622,17 @@ class _ContactsDialogState extends State<_ContactsDialog> {
     } else if (_sortMode == 'Z-A') {
       filtered.sort((a, b) => b.email.compareTo(a.email));
     } else {
-      // Recent: reverse insertion order
-      return filtered.reversed.toList();
+      // Recent: newest savedDate first, then reverse insertion order
+      final rev = filtered.reversed.toList();
+      rev.sort((a, b) {
+        final da = a.savedDate != null ? DateHelpers.parseDmy(a.savedDate!) : null;
+        final db = b.savedDate != null ? DateHelpers.parseDmy(b.savedDate!) : null;
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return db.compareTo(da);
+      });
+      return rev;
     }
     return filtered;
   }
@@ -1678,17 +1687,6 @@ class _ContactsDialogState extends State<_ContactsDialog> {
                       ],
                     ),
                   ),
-                  if (visible.isNotEmpty)
-                    IconButton(
-                      tooltip: 'Copy all filtered emails',
-                      icon: Icon(Icons.copy_all_rounded, color: accent, size: 20),
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: visible.map((c) => c.email).join(', ')));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Copied ${visible.length} email(s)')),
-                        );
-                      },
-                    ),
                   PopupMenuButton<String>(
                     tooltip: 'Sort',
                     icon: Icon(Icons.sort_rounded, color: AppTheme.textSecondary(context), size: 20),
@@ -1797,29 +1795,44 @@ class _ContactsDialogState extends State<_ContactsDialog> {
                             title: Text(
                               contact.email,
                               style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context)),
-                              overflow: TextOverflow.ellipsis,
                             ),
-                            subtitle: sources.isEmpty
+                            subtitle: (sources.isEmpty && contact.savedDate == null)
                                 ? null
                                 : Padding(
                                     padding: const EdgeInsets.only(top: 4),
                                     child: Wrap(
                                       spacing: 4,
-                                      runSpacing: 2,
-                                      children: sources.map((s) {
-                                        final c = _sourceColor(s);
-                                        return Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                                          decoration: BoxDecoration(
-                                            color: c.withValues(alpha: 0.12),
-                                            borderRadius: BorderRadius.circular(6),
+                                      runSpacing: 3,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      children: [
+                                        if (contact.savedDate != null)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.surfaceBg(context),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: AppTheme.border(context)),
+                                            ),
+                                            child: Text(
+                                              contact.savedDate!,
+                                              style: TextStyle(fontFamily: 'Inter', fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.textSecondary(context)),
+                                            ),
                                           ),
-                                          child: Text(
-                                            s,
-                                            style: TextStyle(fontFamily: 'Inter', fontSize: 10, fontWeight: FontWeight.w700, color: c),
-                                          ),
-                                        );
-                                      }).toList(),
+                                        ...sources.map((s) {
+                                          final c = _sourceColor(s);
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: c.withValues(alpha: 0.12),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              s,
+                                              style: TextStyle(fontFamily: 'Inter', fontSize: 10, fontWeight: FontWeight.w700, color: c),
+                                            ),
+                                          );
+                                        }),
+                                      ],
                                     ),
                                   ),
                             trailing: Row(
@@ -1839,6 +1852,26 @@ class _ContactsDialogState extends State<_ContactsDialog> {
                                   tooltip: 'Remove contact',
                                   icon: const Icon(Icons.delete_outline_rounded, size: 17, color: AppTheme.errorRed),
                                   onPressed: () async {
+                                    final confirm = await showBlurredDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        title: const Text('Delete Contact?', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+                                        content: Text('Remove "${contact.email}" from saved contacts?', style: const TextStyle(fontFamily: 'Inter')),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(ctx, false),
+                                            child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+                                          ),
+                                          ElevatedButton(
+                                            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                                            onPressed: () => Navigator.pop(ctx, true),
+                                            child: const Text('Delete', style: TextStyle(fontFamily: 'Inter', color: Colors.white)),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm != true) return;
                                     await StorageService.deleteContact(contact.email);
                                     if (!mounted) return;
                                     setState(() => _contacts.removeWhere((c) => c.email == contact.email));
@@ -2402,7 +2435,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
       final e = widget.editEmail!;
       _sendType = e.type;
       _senderController.text = e.senderEmail;
-      _isAuthenticated = true;
+      _isAuthenticated = !widget.isDraft;
       _subjectController.text = e.subject;
       _bodyController.text = e.body;
       _dateController.text = e.scheduledDate;
@@ -2432,12 +2465,23 @@ class _ScheduleModalState extends State<_ScheduleModal>
 
   Future<void> _loadSenders() async {
     final s = await StorageService.getSenderEmails();
-    setState(() => _suggestedSenders = s);
+    if (!mounted) return;
+    final current = _senderController.text.trim().toLowerCase();
+    setState(() {
+      _suggestedSenders = s;
+      if (current.isNotEmpty && s.any((e) => e.toLowerCase() == current)) {
+        _isAuthenticated = true;
+      }
+    });
   }
 
   void _onSenderChanged() {
     _senderLookupDebounce?.cancel();
-    final email = _senderController.text.trim();
+    final email = _senderController.text.trim().toLowerCase();
+    final alreadyAuthed = email.isNotEmpty && _suggestedSenders.any((s) => s.toLowerCase() == email);
+    if (alreadyAuthed && !_isAuthenticated && mounted) {
+      setState(() => _isAuthenticated = true);
+    }
     if (!_isValidEmail(email)) {
       if (mounted) {
         setState(() {
@@ -3219,7 +3263,23 @@ class _ScheduleModalState extends State<_ScheduleModal>
                           hintText: 'your@gmail.com',
                           prefixIcon: const Icon(Icons.alternate_email, size: 18),
                           suffixIcon: _isAuthenticated
-                              ? const Icon(Icons.verified_rounded, color: AppTheme.successGreen)
+                              ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.verified_rounded, color: AppTheme.successGreen),
+                                    if (widget.editEmail == null || widget.isDraft)
+                                      IconButton(
+                                        tooltip: 'Switch sender',
+                                        icon: const Icon(Icons.edit_outlined, size: 18),
+                                        onPressed: () {
+                                          setState(() {
+                                            _isAuthenticated = false;
+                                            _senderController.clear();
+                                          });
+                                        },
+                                      ),
+                                  ],
+                                )
                               : null,
                         ),
                       );

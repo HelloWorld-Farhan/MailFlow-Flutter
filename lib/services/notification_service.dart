@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../models/scheduled_email.dart';
+import '../theme/app_theme.dart';
 
 enum CampaignEventKind { started, completed, failed }
 
@@ -147,6 +150,14 @@ class NotificationService {
   static const int _parallelSummaryId = 1998;
   static const String updatePayload = 'app_update';
 
+  static Color get _notifAccentColor {
+    final mode = AppTheme.themeModeNotifier.value;
+    final isDark = mode == ThemeMode.dark ||
+        (mode == ThemeMode.system &&
+            PlatformDispatcher.instance.platformBrightness == Brightness.dark);
+    return isDark ? AppTheme.blackberryCream : AppTheme.primaryBlue;
+  }
+
   static Future<void> initialize() async {
     if (_isInitialized || !_isSupported) return;
 
@@ -275,6 +286,7 @@ class NotificationService {
         showProgress: true,
         maxProgress: 60,
         progress: (60 - secondsLeft).clamp(0, 60),
+        color: _notifAccentColor,
       ),
       iOS: DarwinNotificationDetails(presentAlert: !silent, presentBanner: !silent, presentSound: !silent),
       macOS: DarwinNotificationDetails(presentAlert: !silent, presentBanner: !silent, presentSound: !silent),
@@ -316,7 +328,7 @@ class NotificationService {
     final parallelNote = parallelCount > 1 ? ' • $parallelCount running in parallel' : '';
 
     final details = NotificationDetails(
-      android: const AndroidNotificationDetails(
+      android: AndroidNotificationDetails(
         'mailflow_sending_start',
         'Mail Sending Started',
         channelDescription: 'Plays system sound when automated email sending begins',
@@ -324,6 +336,7 @@ class NotificationService {
         priority: Priority.high,
         playSound: true,
         enableVibration: true,
+        color: _notifAccentColor,
       ),
       iOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
       macOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
@@ -375,6 +388,7 @@ class NotificationService {
         showProgress: total > 0,
         maxProgress: total > 0 ? total : 1,
         progress: sent,
+        color: _notifAccentColor,
       ),
       iOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
       macOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
@@ -424,6 +438,7 @@ class NotificationService {
         showProgress: totalAll > 0,
         maxProgress: totalAll > 0 ? totalAll : 1,
         progress: totalSent,
+        color: _notifAccentColor,
       ),
       iOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
       macOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
@@ -471,7 +486,7 @@ class NotificationService {
         parallelRemaining > 0 ? ' • $parallelRemaining still running' : '';
 
     final details = NotificationDetails(
-      android: const AndroidNotificationDetails(
+      android: AndroidNotificationDetails(
         'mailflow_sending_done',
         'Mail Sending Completed',
         channelDescription: 'Plays system sound when an email campaign finishes',
@@ -479,6 +494,7 @@ class NotificationService {
         priority: Priority.high,
         playSound: true,
         enableVibration: true,
+        color: _notifAccentColor,
       ),
       iOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
       macOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
@@ -518,7 +534,7 @@ class NotificationService {
     await initialize();
 
     final details = NotificationDetails(
-      android: const AndroidNotificationDetails(
+      android: AndroidNotificationDetails(
         'mailflow_updates',
         'Software Updates',
         channelDescription: 'Notifications for new MailFlow versions and updates',
@@ -526,6 +542,7 @@ class NotificationService {
         priority: Priority.high,
         playSound: true,
         enableVibration: true,
+        color: _notifAccentColor,
       ),
       iOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
       macOS: const DarwinNotificationDetails(presentAlert: true, presentBanner: true, presentSound: true),
