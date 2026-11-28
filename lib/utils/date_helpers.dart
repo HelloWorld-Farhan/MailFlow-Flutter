@@ -67,4 +67,11 @@ class DateHelpers {
     if (parseDmy(d) == null || t.length != 5) return false;
     return isFutureDateTime(d, '$t ${am ? "AM" : "PM"}');
   }
+
+  /// Returns true when the DD/MM/YYYY date falls on Saturday or Sunday.
+  static bool isWeekendDmy(String d) {
+    final dt = parseDmy(d);
+    if (dt == null) return false;
+    return dt.weekday == DateTime.saturday || dt.weekday == DateTime.sunday;
+  }
 }

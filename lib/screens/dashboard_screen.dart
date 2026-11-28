@@ -2403,6 +2403,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
       sentCount: widget.editEmail?.sentCount ?? 0,
       lastSentDate: widget.editEmail?.lastSentDate,
       delayMinutes: _delayMinutes,
+      forceWeekend: _sendType != 'PDF' || DateHelpers.isWeekendDmy(_dateController.text),
       createdAt: widget.editEmail?.createdAt ?? '${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}',
     );
 
@@ -2592,6 +2593,7 @@ class _ScheduleModalState extends State<_ScheduleModal>
       sentCount: 0,
       lastSentDate: existingPdf.lastSentDate,
       delayMinutes: newPdf.delayMinutes,
+      forceWeekend: existingPdf.forceWeekend || DateHelpers.isWeekendDmy(existingPdf.scheduledDate),
       isMerged: true,
       mergedSourceIds: [existingPdf.id, newPdf.id],
       mergeContributions: {existingPdf.id: allocExisting, newPdf.id: allocNew},
@@ -3719,6 +3721,7 @@ class _ResendModalState extends State<_ResendModal> {
       recipientStatuses: {}, // Clears the ticks for the new schedule
       lastSentDate: '',
       recipients: widget.email.recipients.toSet().toList(),
+      forceWeekend: widget.email.type != 'PDF' || DateHelpers.isWeekendDmy(_dateController.text),
       clearQueuedAfter: true,
     );
     

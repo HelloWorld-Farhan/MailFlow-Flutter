@@ -323,4 +323,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(ImageFiltered), findsNothing);
   });
+
+  test('DateHelpers.isWeekendDmy detects Saturday and Sunday accurately', () {
+    expect(DateHelpers.isWeekendDmy('28/11/2026'), isTrue); // Saturday
+    expect(DateHelpers.isWeekendDmy('29/11/2026'), isTrue); // Sunday
+    expect(DateHelpers.isWeekendDmy('30/11/2026'), isFalse); // Monday
+  });
 }
