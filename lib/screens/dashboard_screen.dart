@@ -217,16 +217,13 @@ class _DashboardScreenState extends State<DashboardScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.28),
+      barrierColor: Colors.black.withValues(alpha: 0.48),
       useSafeArea: true,
-      builder: (context) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: ResponsiveCenter(
-          maxWidth: 640,
-          child: _ScheduleModal(editEmail: existingEmail),
-        ),
+      builder: (context) => ResponsiveCenter(
+        maxWidth: 640,
+        child: _ScheduleModal(editEmail: existingEmail),
       ),
-    ).then((_) => _loadHistory());
+    );
   }
 
   void _openResendModal(ScheduledEmail email) {
@@ -235,15 +232,12 @@ class _DashboardScreenState extends State<DashboardScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.28),
-      builder: (context) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: ResponsiveCenter(
-          maxWidth: 640,
-          child: _ResendModal(email: email),
-        ),
+      barrierColor: Colors.black.withValues(alpha: 0.48),
+      builder: (context) => ResponsiveCenter(
+        maxWidth: 640,
+        child: _ResendModal(email: email),
       ),
-    ).then((_) => _loadHistory());
+    );
   }
 
   Future<void> _deleteEmail(String id) async {
@@ -1300,7 +1294,7 @@ class _EmailCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 6),
                             Expanded(child: Text(
-                              '${item.recipients.length} recipient${item.recipients.length == 1 ? '' : 's'}  â€¢  ${item.scheduledDate}',
+                              '${item.recipients.length} recipient${item.recipients.length == 1 ? '' : 's'}',
                               style: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: AppTheme.textLight),
                               maxLines: 1, overflow: TextOverflow.ellipsis,
                             )),
@@ -2043,6 +2037,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   bool _isPdfEmailEditing = false;
   int _currentSenderUsage = 0;
   bool _dateQuotaFull = false;
+  bool _isSubmitting = false;
   Timer? _senderLookupDebounce;
 
   @override
@@ -2309,6 +2304,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   }
 
   Future<void> _submit() async {
+    if (_isSubmitting) return;
     final sender = _senderController.text.trim();
     if (!_isValidEmail(sender) || !_isAuthenticated) { _showMsg('sender', 'Authenticate a valid sender email first.'); return; }
     if (!DateHelpers.isFutureDmyTime(_dateController.text, _timeController.text, _isAm)) { _showMsg('date', 'Enter a valid future date and time.'); return; }
@@ -2365,7 +2361,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       if (_selectedSubject == null) { _showMsg('subject', 'Please select a saved subject.'); return; }
       if (_selectedBody == null) { _showMsg('body', 'Please select a saved body.'); return; }
     }
-    await StorageService.saveContacts(recipients, source: _sendType);
+    unawaited(StorageService.saveContacts(recipients, source: _sendType));
 
     final dailyLimit = _sendType == 'PDF' ? (int.tryParse(_dailyLimitController.text.trim()) ?? 40) : 0;
     final newEmail = ScheduledEmail(
@@ -2396,6 +2392,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       }
     }
 
+    setState(() => _isSubmitting = true);
     try {
       if (widget.editEmail != null) {
         await BackendService.deleteCampaign(widget.editEmail!.id);
@@ -2404,6 +2401,8 @@ class _ScheduleModalState extends State<_ScheduleModal> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       _showMsg('date', 'Backend error: $e');
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -2883,7 +2882,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                           if (_dateQuotaFull) ...[
                             const SizedBox(height: 6),
                             const Text(
-                              'âš ï¸ This sender has already sent 50 emails today. Please use a different sender email.',
+                              'This sender has already sent 50 emails today. Please use a different sender email.',
                               style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontSize: 11,
@@ -3340,7 +3339,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       minLines: 8,
                       maxLines: 15,
                       decoration: const InputDecoration(
-                        hintText: 'Write your HTML email body hereâ€¦ (e.g. <b>Hello</b>)',
+                        hintText: 'Write your HTML email body here... (e.g. <b>Hello</b>)',
                         alignLabelWithHint: true,
                         contentPadding: EdgeInsets.all(16),
                       ),
@@ -3445,11 +3444,17 @@ class _ScheduleModalState extends State<_ScheduleModal> {
                       width: double.infinity,
                       height: 54,
                       child: ElevatedButton(
-                        onPressed: _submit,
-                        child: Text(
-                          widget.editEmail != null ? 'Update Schedule' : 'Save & Schedule',
-                          style: const TextStyle(fontFamily: 'Outfit', fontSize: 17, fontWeight: FontWeight.w700),
-                        ),
+                        onPressed: _isSubmitting ? null : _submit,
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                              )
+                            : Text(
+                                widget.editEmail != null ? 'Update Schedule' : 'Save & Schedule',
+                                style: const TextStyle(fontFamily: 'Outfit', fontSize: 17, fontWeight: FontWeight.w700),
+                              ),
                       ),
                     ),
                 ],
