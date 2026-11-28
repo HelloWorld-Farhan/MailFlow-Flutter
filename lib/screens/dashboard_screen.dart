@@ -1987,7 +1987,8 @@ class _ScheduleModal extends StatefulWidget {
   State<_ScheduleModal> createState() => _ScheduleModalState();
 }
 
-class _ScheduleModalState extends State<_ScheduleModal> {
+class _ScheduleModalState extends State<_ScheduleModal>
+    with WidgetsBindingObserver {
   late String _sendType;
   final _senderController = TextEditingController();
   List<String> _suggestedSenders = [];
@@ -2043,6 +2044,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSenders();
     _loadTemplates();
     _senderController.addListener(_onSenderChanged);
@@ -2112,7 +2114,29 @@ class _ScheduleModalState extends State<_ScheduleModal> {
   }
 
   @override
+  void didChangeMetrics() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      // Detach IME cleanly before backgrounding so Android never leaves a blank keyboard gap on return.
+      FocusManager.instance.primaryFocus?.unfocus();
+    } else if (state == AppLifecycleState.resumed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (MediaQuery.viewInsetsOf(context).bottom == 0) {
+          FocusManager.instance.primaryFocus?.unfocus();
+        }
+        setState(() {});
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _senderLookupDebounce?.cancel();
     _senderController.dispose();
     _scheduleNameController.dispose();
@@ -2588,7 +2612,7 @@ class _ScheduleModalState extends State<_ScheduleModal> {
         color: AppTheme.cardBg(context),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -3481,7 +3505,22 @@ class _DateFieldWithQuickButtons extends StatelessWidget {
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: controller,
       builder: (context, value, child) {
-        final weekdayStr = DateHelpers.weekdayName(value.text);
+        final trimmed = value.text.trim();
+        final weekdayStr = DateHelpers.weekdayName(trimmed);
+        final todayStr = DateHelpers.todayDmy();
+        final tomorrowStr = _formatDate(DateTime.now().add(const Duration(days: 1)));
+        final todayDay = DateHelpers.weekdayName(todayStr);
+        final tomorrowDay = DateHelpers.weekdayName(tomorrowStr);
+        final isTodaySelected = trimmed == todayStr;
+        final isTomorrowSelected = trimmed == tomorrowStr;
+
+        void selectDate(String dmy) {
+          controller.value = TextEditingValue(
+            text: dmy,
+            selection: TextSelection.collapsed(offset: dmy.length),
+          );
+        }
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -3500,7 +3539,7 @@ class _DateFieldWithQuickButtons extends StatelessWidget {
               runSpacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (weekdayStr.isNotEmpty)
+                if (weekdayStr.isNotEmpty && !isTodaySelected && !isTomorrowSelected)
                   Text(
                     weekdayStr,
                     style: TextStyle(
@@ -3512,15 +3551,21 @@ class _DateFieldWithQuickButtons extends StatelessWidget {
                   ),
                 _quickDateChip(
                   context,
-                  label: 'Today',
+                  label: isTodaySelected
+                      ? todayDay
+                      : 'Today (${todayDay.length >= 3 ? todayDay.substring(0, 3) : todayDay})',
+                  isSelected: isTodaySelected,
                   accent: accent,
-                  onTap: () => controller.text = DateHelpers.todayDmy(),
+                  onTap: () => selectDate(todayStr),
                 ),
                 _quickDateChip(
                   context,
-                  label: 'Tomorrow',
+                  label: isTomorrowSelected
+                      ? tomorrowDay
+                      : 'Tomorrow (${tomorrowDay.length >= 3 ? tomorrowDay.substring(0, 3) : tomorrowDay})',
+                  isSelected: isTomorrowSelected,
                   accent: accent,
-                  onTap: () => controller.text = _formatDate(DateTime.now().add(const Duration(days: 1))),
+                  onTap: () => selectDate(tomorrowStr),
                 ),
               ],
             ),
@@ -3533,6 +3578,7 @@ class _DateFieldWithQuickButtons extends StatelessWidget {
   Widget _quickDateChip(
     BuildContext context, {
     required String label,
+    required bool isSelected,
     required Color accent,
     required VoidCallback onTap,
   }) {
@@ -3541,15 +3587,21 @@ class _DateFieldWithQuickButtons extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: AppTheme.primaryBlue.withValues(alpha: 0.10),
+          color: isSelected
+              ? AppTheme.primaryBlue
+              : AppTheme.primaryBlue.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppTheme.primaryBlue.withValues(alpha: 0.25)),
+          border: Border.all(
+            color: isSelected
+                ? AppTheme.primaryBlue
+                : AppTheme.primaryBlue.withValues(alpha: 0.25),
+          ),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 11,
-            color: accent,
+            color: isSelected ? Colors.white : accent,
             fontWeight: FontWeight.w700,
             fontFamily: 'Inter',
           ),
