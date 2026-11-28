@@ -292,6 +292,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _openScheduleModal({ScheduledEmail? existingEmail, bool isDraft = false}) {
+    FocusManager.instance.primaryFocus?.unfocus();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -302,21 +303,19 @@ class _DashboardScreenState extends State<DashboardScreen>
         maxWidth: 640,
         child: _ScheduleModal(editEmail: existingEmail, isDraft: isDraft),
       ),
-    ).then((_) => _loadDrafts());
+    ).then((_) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      _loadDrafts();
+    });
   }
 
   void _openResendModal(ScheduledEmail email) {
+    FocusManager.instance.primaryFocus?.unfocus();
     NotificationService.clearCampaignAlertState(email.id);
-    showModalBottomSheet(
+    showBlurredDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.48),
-      builder: (context) => ResponsiveCenter(
-        maxWidth: 640,
-        child: _ResendModal(email: email),
-      ),
-    );
+      builder: (context) => _ResendModal(email: email),
+    ).then((_) => FocusManager.instance.primaryFocus?.unfocus());
   }
 
   Future<void> _deleteEmail(String id) async {
@@ -4003,6 +4002,7 @@ class _DateFieldWithQuickButtons extends StatelessWidget {
         final isTomorrowSelected = trimmed == tomorrowStr;
 
         void selectDate(String dmy) {
+          FocusManager.instance.primaryFocus?.unfocus();
           controller.value = TextEditingValue(
             text: dmy,
             selection: TextSelection.collapsed(offset: dmy.length),
@@ -4022,41 +4022,45 @@ class _DateFieldWithQuickButtons extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            Row(
               children: [
-                if (weekdayStr.isNotEmpty && !isTodaySelected && !isTomorrowSelected)
-                  Text(
-                    weekdayStr,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: accent,
-                      fontWeight: FontWeight.w600,
-                      fontFamily: 'Inter',
-                    ),
+                Expanded(
+                  child: _quickDateChip(
+                    context,
+                    label: isTodaySelected
+                        ? todayDay
+                        : 'Today (${todayDay.length >= 3 ? todayDay.substring(0, 3) : todayDay})',
+                    isSelected: isTodaySelected,
+                    accent: accent,
+                    onTap: () => selectDate(todayStr),
                   ),
-                _quickDateChip(
-                  context,
-                  label: isTodaySelected
-                      ? todayDay
-                      : 'Today (${todayDay.length >= 3 ? todayDay.substring(0, 3) : todayDay})',
-                  isSelected: isTodaySelected,
-                  accent: accent,
-                  onTap: () => selectDate(todayStr),
                 ),
-                _quickDateChip(
-                  context,
-                  label: isTomorrowSelected
-                      ? tomorrowDay
-                      : 'Tomorrow (${tomorrowDay.length >= 3 ? tomorrowDay.substring(0, 3) : tomorrowDay})',
-                  isSelected: isTomorrowSelected,
-                  accent: accent,
-                  onTap: () => selectDate(tomorrowStr),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _quickDateChip(
+                    context,
+                    label: isTomorrowSelected
+                        ? tomorrowDay
+                        : 'Tomorrow (${tomorrowDay.length >= 3 ? tomorrowDay.substring(0, 3) : tomorrowDay})',
+                    isSelected: isTomorrowSelected,
+                    accent: accent,
+                    onTap: () => selectDate(tomorrowStr),
+                  ),
                 ),
               ],
             ),
+            if (weekdayStr.isNotEmpty && !isTodaySelected && !isTomorrowSelected) ...[
+              const SizedBox(height: 4),
+              Text(
+                weekdayStr,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: accent,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
           ],
         );
       },
@@ -4072,8 +4076,10 @@ class _DateFieldWithQuickButtons extends StatelessWidget {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
         decoration: BoxDecoration(
           color: isSelected
               ? AppTheme.primaryBlue
@@ -4085,13 +4091,23 @@ class _DateFieldWithQuickButtons extends StatelessWidget {
                 : AppTheme.primaryBlue.withValues(alpha: 0.25),
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            color: isSelected ? Colors.white : accent,
-            fontWeight: FontWeight.w700,
-            fontFamily: 'Inter',
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: Text(
+                label,
+                key: ValueKey(label),
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isSelected ? Colors.white : accent,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -4223,135 +4239,129 @@ class _ResendModalState extends State<_ResendModal> {
 
   @override
   Widget build(BuildContext context) {
-    return ResponsiveCenter(
-      maxWidth: 640,
-      child: Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      decoration: BoxDecoration(
-        color: AppTheme.cardBg(context),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+      backgroundColor: AppTheme.cardBg(context),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: AppTheme.border(context)),
       ),
-      child: Column(
-        children: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 48, height: 6,
-              decoration: BoxDecoration(
-                color: AppTheme.textSecondary(context).withOpacity(0.25),
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-          Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Resend Email',
-                        style: TextStyle(fontFamily: 'Outfit', fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
-                      ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Container(
-                          width: 32, height: 32,
-                          decoration: BoxDecoration(color: AppTheme.surfaceBg(context), borderRadius: BorderRadius.circular(8)),
-                          child: Icon(Icons.close, size: 18, color: AppTheme.textSecondary(context)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 8),
-                    child: Text('Schedule Date & Time', style: TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue)),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: _DateFieldWithQuickButtons(controller: _dateController),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _timeController,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [TimeInputFormatter()],
-                          decoration: const InputDecoration(
-                            hintText: 'HH:MM',
-                            prefixIcon: Icon(Icons.access_time_rounded, size: 18),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => setState(() => _isAm = true),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              color: _isAm ? AppTheme.primaryBlue : AppTheme.bgSurface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: _isAm ? AppTheme.primaryBlue : AppTheme.divider),
-                            ),
-                            child: Center(child: Text('AM', style: TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: _isAm ? Colors.white : AppTheme.textMid))),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => setState(() => _isAm = false),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              color: !_isAm ? AppTheme.primaryBlue : AppTheme.bgSurface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: !_isAm ? AppTheme.primaryBlue : AppTheme.divider),
-                            ),
-                            child: Center(child: Text('PM', style: TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: !_isAm ? Colors.white : AppTheme.textMid))),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  _buildFieldMsg(),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton(
-                      onPressed: _submit,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryBlue,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      ),
-                      child: const Text('Resend Schedule', style: TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.bold)),
+      elevation: 10,
+      child: GestureDetector(
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        behavior: HitTestBehavior.opaque,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Resend Email',
+                      style: TextStyle(fontFamily: 'Outfit', fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
                     ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 32, height: 32,
+                        decoration: BoxDecoration(color: AppTheme.surfaceBg(context), borderRadius: BorderRadius.circular(8)),
+                        child: Icon(Icons.close, size: 18, color: AppTheme.textSecondary(context)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text('Schedule Date & Time', style: TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primaryBlue)),
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _DateFieldWithQuickButtons(controller: _dateController),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _timeController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [TimeInputFormatter()],
+                        decoration: const InputDecoration(
+                          hintText: 'HH:MM',
+                          prefixIcon: Icon(Icons.access_time_rounded, size: 18),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          FocusManager.instance.primaryFocus?.unfocus();
+                          setState(() => _isAm = true);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _isAm ? AppTheme.primaryBlue : AppTheme.surfaceBg(context),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: _isAm ? AppTheme.primaryBlue : AppTheme.border(context)),
+                          ),
+                          child: Center(child: Text('AM', style: TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: _isAm ? Colors.white : AppTheme.textSecondary(context)))),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          FocusManager.instance.primaryFocus?.unfocus();
+                          setState(() => _isAm = false);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: !_isAm ? AppTheme.primaryBlue : AppTheme.surfaceBg(context),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: !_isAm ? AppTheme.primaryBlue : AppTheme.border(context)),
+                          ),
+                          child: Center(child: Text('PM', style: TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: !_isAm ? Colors.white : AppTheme.textSecondary(context)))),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                _buildFieldMsg(),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryBlue,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: const Text('Resend Schedule', style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.bold)),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
-    ),
-    );
+    ).animate().blur(begin: const Offset(6, 6), end: Offset.zero, duration: 240.ms);
   }
 }
 
