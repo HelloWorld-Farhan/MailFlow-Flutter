@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scheduled_email.dart';
 import '../services/app_config.dart';
 import '../services/backend_service.dart';
+import '../services/background_sync_service.dart';
 import '../services/storage_service.dart';
 import '../utils/date_helpers.dart';
 import '../utils/date_input_formatter.dart';
@@ -264,6 +265,11 @@ class _DashboardScreenState extends State<DashboardScreen>
       _pendingLaunchCampaignId = null;
       WidgetsBinding.instance.addPostFrameCallback((_) => _openCampaignById(targetId));
     }
+    for (final item in history) {
+      if (item.status == 'Scheduled') {
+        unawaited(BackgroundSyncService.scheduleCampaignWake(item));
+      }
+    }
   }
 
   Future<void> _loadDrafts() async {
@@ -271,8 +277,31 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (mounted) setState(() => _drafts = drafts);
   }
 
-  Future<void> _deleteDraft(String id) async {
-    await StorageService.deleteDraft(id);
+  Future<void> _deleteDraft(ScheduledEmail draft) async {
+    final label = (draft.scheduleName != null && draft.scheduleName!.trim().isNotEmpty)
+        ? draft.scheduleName!.trim()
+        : (draft.subject.trim().isNotEmpty ? draft.subject.trim() : 'this draft');
+    final confirm = await showBlurredDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Draft?', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+        content: Text('Are you sure you want to delete "$label"?', style: const TextStyle(fontFamily: 'Inter')),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(fontFamily: 'Inter', color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await StorageService.deleteDraft(draft.id);
     await _loadDrafts();
   }
 
@@ -310,7 +339,9 @@ class _DashboardScreenState extends State<DashboardScreen>
           editEmail: existingEmail,
           isDraft: isDraft,
           existingScheduleNames: existingNames,
+          existingDrafts: _drafts,
           onDraftChanged: _loadDrafts,
+          onOpenDraft: (d) => _openScheduleModal(existingEmail: d, isDraft: true),
         ),
       ),
     ).then((_) {
@@ -435,9 +466,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     // Compute summary metrics & active list in a single O(N) pass.
     int scheduledCount = 0;
     int sentCount = 0;
-    final now = DateTime.now();
-    final active = <ScheduledEmail>[];
-    final preStart = <ScheduledEmail>[];
     final ongoingList = <ScheduledEmail>[];
     final completedList = <ScheduledEmail>[];
     for (final e in _history) {
@@ -449,18 +477,8 @@ class _DashboardScreenState extends State<DashboardScreen>
       } else {
         scheduledCount++;
         ongoingList.add(e);
-        if (SendNotificationMonitor.isActiveStatus(e.status)) {
-          active.add(e);
-        } else if (e.status == 'Scheduled') {
-          final dt = BackendService.parseScheduleDateTime(e.scheduledDate, e.scheduledTime);
-          if (dt != null) {
-            final diff = dt.difference(now).inSeconds;
-            if (diff <= 60 && diff >= -60) preStart.add(e);
-          }
-        }
       }
     }
-    final liveItems = [...active, ...preStart];
     final displayedList = _selectedTab == 0
         ? ongoingList
         : (_selectedTab == 1 ? completedList : _drafts);
@@ -798,34 +816,20 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
 
-          // ── In-App Live Sending / Parallel Activity Notification Hub ─────
-          if (liveItems.isNotEmpty || _latestAlert != null)
+          // ── In-App Event Alert Banner (Start / Done / Failed) ─────
+          if (_latestAlert != null)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Column(
-                  children: [
-                    if (_latestAlert != null)
-                      _RealtimeEventBanner(
-                        event: _latestAlert!,
-                        onTap: () => _showEmailDetails(_latestAlert!.email),
-                        onDismiss: () => setState(() => _latestAlert = null),
-                      ),
-                    if (_latestAlert != null && liveItems.isNotEmpty)
-                      const SizedBox(height: 10),
-                    if (liveItems.isNotEmpty)
-                      _LiveParallelSendingPanel(
-                        activeCampaigns: liveItems,
-                        nowNotifier: _nowNotifier,
-                        onTapCampaign: _showEmailDetails,
-                      ),
-                  ],
+                child: _RealtimeEventBanner(
+                  event: _latestAlert!,
+                  onTap: () => _showEmailDetails(_latestAlert!.email),
+                  onDismiss: () => setState(() => _latestAlert = null),
                 ),
               ),
             ),
 
-          // ── Header hero card (hidden while live sending/countdown is on top) ──
-          if (liveItems.isEmpty)
+          // ── Header hero card (always visible) ──
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
@@ -983,7 +987,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                   : _showEmailDetails(item),
                               onEdit: () => _openScheduleModal(existingEmail: item, isDraft: isDraftTab),
                               onResend: () => _openResendModal(item),
-                              onDelete: () => isDraftTab ? _deleteDraft(item.id) : _deleteEmail(item.id),
+                              onDelete: () => isDraftTab ? _deleteDraft(item) : _deleteEmail(item.id),
                               onStop: () => _stopEmail(item),
                               onResume: () => _resumeEmail(item),
                             );
@@ -1118,178 +1122,6 @@ class _RealtimeEventBanner extends StatelessWidget {
         ),
       ),
     ).animate().fade(duration: 280.ms).blur(begin: const Offset(8, 8), end: Offset.zero, duration: 280.ms).slideY(begin: -0.15, end: 0);
-  }
-}
-
-class _LiveParallelSendingPanel extends StatelessWidget {
-  final List<ScheduledEmail> activeCampaigns;
-  final ValueNotifier<DateTime> nowNotifier;
-  final void Function(ScheduledEmail) onTapCampaign;
-  const _LiveParallelSendingPanel({
-    required this.activeCampaigns,
-    required this.nowNotifier,
-    required this.onTapCampaign,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isParallel = activeCampaigns.length > 1;
-    final totalSent = activeCampaigns.fold<int>(0, (s, e) => s + e.sentCount);
-    final totalRecipients = activeCampaigns.fold<int>(0, (s, e) => s + e.recipients.length);
-
-    return ValueListenableBuilder<DateTime>(
-      valueListenable: nowNotifier,
-      builder: (context, now, _) {
-        return GlassContainer(
-          borderRadius: 18,
-          blurSigma: 16,
-          padding: const EdgeInsets.all(14),
-          color: AppTheme.primaryBlue.withValues(alpha: 0.08),
-          borderColor: AppTheme.primaryBlue.withValues(alpha: 0.30),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.successGreen,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      isParallel
-                          ? '${activeCampaigns.length} Parallel Schedules Live'
-                          : 'Live Schedule Status',
-                      style: TextStyle(
-                        fontFamily: 'Outfit',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textPrimary(context),
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryBlue,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '$totalSent / $totalRecipients sent',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              ...activeCampaigns.map((item) {
-                final total = item.recipients.length;
-                final sent = item.sentCount.clamp(0, total);
-                final ratio = total > 0 ? sent / total : 0.0;
-                final current = SendNotificationMonitor.currentRecipient(item);
-                final title = (item.scheduleName != null && item.scheduleName!.trim().isNotEmpty)
-                    ? item.scheduleName!
-                    : (item.subject.isNotEmpty ? item.subject : item.senderEmail);
-                String timerNote = '';
-                if (item.status == 'Scheduled') {
-                  final dt = BackendService.parseScheduleDateTime(item.scheduledDate, item.scheduledTime);
-                  final diff = dt != null ? dt.difference(now).inSeconds : 0;
-                  timerNote = diff > 0 ? 'Starting in ${diff}s' : 'Starting now...';
-                } else if (item.nextSendAt != null) {
-                  final nextSec = item.nextSendAt!.difference(now).inSeconds;
-                  if (nextSec > 0) timerNote = 'Next in ${nextSec}s';
-                }
-                return InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => onTapCampaign(item),
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 6, bottom: 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '$title  •  ${item.senderEmail}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.textPrimary(context),
-                                ),
-                              ),
-                            ),
-                            if (timerNote.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              Text(
-                                timerNote,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppTheme.warningAmber,
-                                ),
-                              ),
-                            ],
-                            const SizedBox(width: 8),
-                            Text(
-                              '$sent/$total',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.primaryBlue,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (current != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              'Sending to $current...',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                fontSize: 11,
-                                color: AppTheme.textSecondary(context),
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 5),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: ratio > 0 ? ratio : null,
-                            backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.14),
-                            valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
-                            minHeight: 4,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-            ],
-          ),
-        ).animate().fade(duration: 250.ms);
-      },
-    );
   }
 }
 
@@ -2653,12 +2485,16 @@ class _ScheduleModal extends StatefulWidget {
   final ScheduledEmail? editEmail;
   final bool isDraft;
   final Set<String> existingScheduleNames;
+  final List<ScheduledEmail> existingDrafts;
   final VoidCallback? onDraftChanged;
+  final void Function(ScheduledEmail draft)? onOpenDraft;
   const _ScheduleModal({
     this.editEmail,
     this.isDraft = false,
     this.existingScheduleNames = const {},
+    this.existingDrafts = const [],
     this.onDraftChanged,
+    this.onOpenDraft,
   });
 
   @override
@@ -3536,31 +3372,71 @@ class _ScheduleModalState extends State<_ScheduleModal>
                         ],
                       ),
                     )
-                  else if (_scheduleNameController.text.trim().isNotEmpty && _scheduleNameMsg == null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6, left: 4),
-                      child: Row(
-                        children: [
-                          Icon(
-                            _isScheduleNameDuplicate ? Icons.cancel_rounded : Icons.check_circle_rounded,
-                            size: 14,
-                            color: _isScheduleNameDuplicate ? AppTheme.errorRed : AppTheme.successGreen,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            _isScheduleNameDuplicate
-                                ? 'Name already exists — please choose a unique name'
-                                : 'Unique schedule name available',
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
+                  else if (_scheduleNameController.text.trim().isNotEmpty && _scheduleNameMsg == null) ...[
+                    Builder(builder: (context) {
+                      final norm = _scheduleNameController.text.trim().toLowerCase();
+                      final matchingDraft = _isScheduleNameDuplicate
+                          ? widget.existingDrafts.where((d) =>
+                              d.id != widget.editEmail?.id &&
+                              (d.scheduleName?.trim().toLowerCase() ?? '') == norm).firstOrNull
+                          : null;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6, left: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _isScheduleNameDuplicate ? Icons.cancel_rounded : Icons.check_circle_rounded,
+                              size: 14,
                               color: _isScheduleNameDuplicate ? AppTheme.errorRed : AppTheme.successGreen,
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Text(
+                                matchingDraft != null
+                                    ? 'A draft named "${matchingDraft.scheduleName}" already exists'
+                                    : (_isScheduleNameDuplicate
+                                        ? 'Name already exists — please choose a unique name'
+                                        : 'Unique schedule name available'),
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: _isScheduleNameDuplicate ? AppTheme.errorRed : AppTheme.successGreen,
+                                ),
+                              ),
+                            ),
+                            if (matchingDraft != null && widget.onOpenDraft != null)
+                              TextButton.icon(
+                                onPressed: () {
+                                  _savedOrSubmitted = true;
+                                  Navigator.pop(context);
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    widget.onOpenDraft?.call(matchingDraft);
+                                  });
+                                },
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                icon: const Icon(Icons.open_in_new_rounded, size: 13, color: AppTheme.primaryBlue),
+                                label: const Text(
+                                  'Open Draft',
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.primaryBlue,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
                   _buildFieldMsg(_scheduleNameMsg, _isScheduleNameErr),
                   const SizedBox(height: 24),
 

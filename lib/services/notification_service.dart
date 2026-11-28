@@ -244,14 +244,7 @@ class NotificationService {
 
     if (monitor.shouldUpdateProgress(active)) {
       if (active.isNotEmpty) {
-        for (final campaign in active) {
-          await showSendingProgressNotification(campaign, parallelCount: active.length);
-        }
-        if (active.length > 1) {
-          await _showParallelSummaryNotification(active);
-        } else {
-          await cancelNotification(_parallelSummaryId);
-        }
+        await _showParallelSummaryNotification(active);
       } else {
         await cancelNotification(_parallelSummaryId);
       }
@@ -424,6 +417,16 @@ class NotificationService {
     final totalSent = active.fold<int>(0, (s, e) => s + e.sentCount);
     final totalAll = active.fold<int>(0, (s, e) => s + e.recipients.length);
     final ratio = totalAll > 0 ? (totalSent / totalAll).clamp(0.0, 1.0) : 0.0;
+    final now = DateTime.now();
+    final lines = active.map((e) {
+      final nextSec = e.nextSendAt?.difference(now).inSeconds;
+      final nextLabel = (nextSec != null && nextSec > 0) ? ' • Next ${nextSec}s' : '';
+      return '${_labelFor(e)}: ${e.sentCount}/${e.recipients.length} sent$nextLabel';
+    }).toList();
+    final title = active.length == 1
+        ? 'Sending: ${_labelFor(active.first)}'
+        : '${active.length} Schedules Sending in Parallel';
+    final summary = '$totalSent / $totalAll emails sent';
 
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
@@ -438,18 +441,23 @@ class NotificationService {
         showProgress: totalAll > 0,
         maxProgress: totalAll > 0 ? totalAll : 1,
         progress: totalSent,
+        styleInformation: InboxStyleInformation(
+          lines,
+          contentTitle: title,
+          summaryText: summary,
+        ),
         color: _notifAccentColor,
       ),
       iOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
       macOS: const DarwinNotificationDetails(presentAlert: false, presentSound: false),
       windows: WindowsNotificationDetails(
         audio: WindowsNotificationAudio.silent(),
-        subtitle: '${active.length} active senders running simultaneously',
+        subtitle: '${active.length} active schedule${active.length == 1 ? '' : 's'}',
         progressBars: [
           WindowsProgressBar(
             id: 'parallel_summary',
-            title: '${active.length} Parallel Dispatches',
-            status: '$totalSent / $totalAll total emails sent',
+            title: title,
+            status: summary,
             value: ratio,
           ),
         ],
@@ -458,8 +466,8 @@ class NotificationService {
 
     await _notificationsPlugin.show(
       id: _parallelSummaryId,
-      title: '${active.length} Campaigns Sending in Parallel',
-      body: '$totalSent / $totalAll emails sent across ${active.length} schedules',
+      title: title,
+      body: lines.join(' | '),
       notificationDetails: details,
       payload: active.first.id,
     );

@@ -6,6 +6,7 @@ import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 import 'services/app_config.dart';
 import 'services/backend_service.dart';
+import 'services/background_sync_service.dart';
 import 'services/notification_service.dart';
 
 void main() async {
@@ -13,6 +14,7 @@ void main() async {
   await AppTheme.loadThemeMode();
   await AppConfig.load();
   await NotificationService.initialize();
+  await BackgroundSyncService.initialize();
   await BackendService.startRealtime();
   runApp(const MailFlowApp());
 }
