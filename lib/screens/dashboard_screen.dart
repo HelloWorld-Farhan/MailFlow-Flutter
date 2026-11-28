@@ -2084,18 +2084,25 @@ class _DetailsDialogState extends State<_DetailsDialog> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 240),
+                duration: const Duration(milliseconds: 260),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, anim) => FadeTransition(
-                  opacity: anim,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 0.10),
-                      end: Offset.zero,
-                    ).animate(anim),
-                    child: child,
-                  ),
+                transitionBuilder: (child, anim) => AnimatedBuilder(
+                  animation: anim,
+                  child: child,
+                  builder: (context, child) {
+                    final sigma = (1.0 - anim.value) * 8.0;
+                    return ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+                      child: FadeTransition(
+                        opacity: anim,
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.96, end: 1.0).animate(anim),
+                          child: child,
+                        ),
+                      ),
+                    );
+                  },
                 ),
                 child: _activePanel == 'body'
                     ? _buildSubPanel(
@@ -2110,7 +2117,7 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                             style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context), height: 1.45),
                           ),
                         ),
-                      ).animate().blur(begin: const Offset(6, 6), end: Offset.zero, duration: 220.ms)
+                      )
                     : _activePanel == 'recipients'
                         ? _buildSubPanel(
                             key: const ValueKey('recipients'),
@@ -2152,7 +2159,7 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                                 );
                               },
                             ),
-                          ).animate().blur(begin: const Offset(6, 6), end: Offset.zero, duration: 220.ms)
+                          )
                         : Padding(
                             key: const ValueKey('summary'),
                             padding: const EdgeInsets.all(20),
@@ -3253,11 +3260,11 @@ class _ScheduleModalState extends State<_ScheduleModal>
                     },
                     fieldViewBuilder: (ctx, ctrl, focus, onSubmit) {
                       if (_senderController.text.isNotEmpty && ctrl.text.isEmpty) ctrl.text = _senderController.text;
-                      ctrl.addListener(() => _senderController.text = ctrl.text);
                       return TextField(
                         controller: ctrl,
                         focusNode: focus,
                         enabled: !_isAuthenticated,
+                        onChanged: (v) => _senderController.text = v,
                         decoration: InputDecoration(
                           hintText: 'your@gmail.com',
                           prefixIcon: const Icon(Icons.alternate_email, size: 18),
@@ -3285,36 +3292,73 @@ class _ScheduleModalState extends State<_ScheduleModal>
                     },
                   ),
 
-                  if (!_isAuthenticated) ...[
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: OutlinedButton(
-                        onPressed: _isAuthenticating ? null : () => _authenticateWithGoogle(_senderController.text),
-                        child: _isAuthenticating
-                            ? const Row(
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: _isAuthenticated
+                          ? Container(
+                              key: const ValueKey('authed'),
+                              width: double.infinity,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: AppTheme.successGreen.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppTheme.successGreen.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  SizedBox(
-                                    width: 18, height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  ),
-                                  SizedBox(width: 10),
-                                  Text('Authenticating...'),
-                                ],
-                              )
-                            : const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.security_rounded, size: 18),
+                                  Icon(Icons.verified_rounded, size: 18, color: AppTheme.successGreen),
                                   SizedBox(width: 8),
-                                  Text('Authenticate with Google'),
+                                  Text(
+                                    'Authenticated • Ready to send',
+                                    style: TextStyle(
+                                      fontFamily: 'Inter',
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.successGreen,
+                                    ),
+                                  ),
                                 ],
                               ),
-                      ),
+                            )
+                          : SizedBox(
+                              key: const ValueKey('unauthed'),
+                              width: double.infinity,
+                              height: 48,
+                              child: OutlinedButton(
+                                onPressed: _isAuthenticating ? null : () => _authenticateWithGoogle(_senderController.text),
+                                child: _isAuthenticating
+                                    ? const Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          SizedBox(
+                                            width: 18, height: 18,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          ),
+                                          SizedBox(width: 10),
+                                          Text('Authenticating...'),
+                                        ],
+                                      )
+                                    : const Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.security_rounded, size: 18),
+                                          SizedBox(width: 8),
+                                          Text('Authenticate with Google'),
+                                        ],
+                                      ),
+                              ),
+                            ),
                     ),
-                  ],
+                  ),
                   _buildFieldMsg(_senderMsg, _isSenderErr),
                   if (_isAuthenticated && _isValidEmail(_senderController.text) && _dateController.text.length == 10) ...[
                     const SizedBox(height: 10),
