@@ -1651,18 +1651,250 @@ class _ContactsDialogState extends State<_ContactsDialog> {
     return _contacts.where((c) => c.sources.contains(filter)).length;
   }
 
+  Map<String, List<SavedContact>> _groupByDate(List<SavedContact> items) {
+    final groups = <String, List<SavedContact>>{};
+    for (final c in items) {
+      final key = (c.savedDate != null && c.savedDate!.trim().isNotEmpty) ? c.savedDate!.trim() : 'Earlier';
+      groups.putIfAbsent(key, () => []).add(c);
+    }
+    final sortedKeys = groups.keys.toList()
+      ..sort((a, b) {
+        final da = a == 'Earlier' ? null : DateHelpers.parseDmy(a);
+        final db = b == 'Earlier' ? null : DateHelpers.parseDmy(b);
+        if (da == null && db == null) return a.compareTo(b);
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return db.compareTo(da);
+      });
+    return {for (final k in sortedKeys) k: groups[k]!};
+  }
+
+  Future<void> _openDateContactsPopup(String dateKey, List<SavedContact> initialGroup) async {
+    final accent = AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue;
+    final day = dateKey == 'Earlier' ? '' : DateHelpers.weekdayName(dateKey);
+    final dateTitle = day.isNotEmpty ? '$dateKey ($day)' : dateKey;
+    final group = List<SavedContact>.of(initialGroup);
+
+    await showBlurredDialog<void>(
+      context: context,
+      builder: (popupCtx) => StatefulBuilder(
+        builder: (ctx, setPopupState) {
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
+            backgroundColor: AppTheme.cardBg(ctx),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 640,
+                maxHeight: MediaQuery.of(ctx).size.height * 0.72,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryBlue.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.calendar_today_rounded, size: 17, color: accent),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                dateTitle,
+                                style: TextStyle(
+                                  fontFamily: 'Outfit',
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.textPrimary(ctx),
+                                ),
+                              ),
+                              Text(
+                                '${group.length} ${group.length == 1 ? 'contact' : 'contacts'}',
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary(ctx),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.close_rounded, color: AppTheme.textSecondary(ctx)),
+                          onPressed: () => Navigator.pop(popupCtx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Divider(color: AppTheme.border(ctx), height: 1),
+                    const SizedBox(height: 6),
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: group.length,
+                        separatorBuilder: (_, __) => Divider(color: AppTheme.border(ctx), height: 1),
+                        itemBuilder: (_, i) {
+                          final contact = group[i];
+                          final sources = contact.sources.toList()..sort();
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                CircleAvatar(
+                                  radius: 17,
+                                  backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.12),
+                                  child: Text(
+                                    contact.email[0].toUpperCase(),
+                                    style: TextStyle(color: accent, fontWeight: FontWeight.w700, fontSize: 13),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      SelectableText(
+                                        contact.email,
+                                        style: TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w500,
+                                          color: AppTheme.textPrimary(ctx),
+                                        ),
+                                      ),
+                                      if (sources.isNotEmpty || contact.savedTime != null) ...[
+                                        const SizedBox(height: 5),
+                                        Wrap(
+                                          spacing: 5,
+                                          runSpacing: 4,
+                                          crossAxisAlignment: WrapCrossAlignment.center,
+                                          children: [
+                                            if (contact.savedTime != null)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: AppTheme.surfaceBg(ctx),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  border: Border.all(color: AppTheme.border(ctx)),
+                                                ),
+                                                child: Text(
+                                                  contact.savedTime!,
+                                                  style: TextStyle(
+                                                    fontFamily: 'Inter',
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: AppTheme.textSecondary(ctx),
+                                                  ),
+                                                ),
+                                              ),
+                                            ...sources.map((s) {
+                                              final c = _sourceColor(s);
+                                              return Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: c.withValues(alpha: 0.12),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  s,
+                                                  style: TextStyle(fontFamily: 'Inter', fontSize: 10.5, fontWeight: FontWeight.w700, color: c),
+                                                ),
+                                              );
+                                            }),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Copy email',
+                                  icon: Icon(Icons.copy_rounded, size: 17, color: AppTheme.textSecondary(ctx)),
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: contact.email));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Copied ${contact.email}')),
+                                    );
+                                  },
+                                ),
+                                IconButton(
+                                  tooltip: 'Remove contact',
+                                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.errorRed),
+                                  onPressed: () async {
+                                    final confirm = await showBlurredDialog<bool>(
+                                      context: ctx,
+                                      builder: (dCtx) => AlertDialog(
+                                        title: const Text('Delete Contact?', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+                                        content: Text('Remove "${contact.email}" from saved contacts?', style: const TextStyle(fontFamily: 'Inter')),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(dCtx, false),
+                                            child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+                                          ),
+                                          ElevatedButton(
+                                            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                                            onPressed: () => Navigator.pop(dCtx, true),
+                                            child: const Text('Delete', style: TextStyle(fontFamily: 'Inter', color: Colors.white)),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm != true) return;
+                                    await StorageService.deleteContact(contact.email);
+                                    if (!mounted) return;
+                                    setState(() => _contacts.removeWhere((c) => c.email == contact.email));
+                                    if (!popupCtx.mounted) return;
+                                    setPopupState(() => group.removeWhere((c) => c.email == contact.email));
+                                    if (group.isEmpty) {
+                                      Navigator.pop(popupCtx);
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ).animate().scale(duration: 220.ms, curve: Curves.easeOutBack).fade();
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final visible = _filteredContacts;
+    final dateGroups = _groupByDate(visible);
+    final dateEntries = dateGroups.entries.toList();
     final accent = AppTheme.isDark(context) ? AppTheme.lightBlue : AppTheme.primaryBlue;
     const filters = ['All', 'Single', 'Multiple', 'PDF'];
 
     return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       backgroundColor: AppTheme.cardBg(context),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: 540,
+          maxWidth: 560,
           maxHeight: MediaQuery.of(context).size.height * 0.78,
         ),
         child: Padding(
@@ -1686,7 +1918,7 @@ class _ContactsDialogState extends State<_ContactsDialog> {
                           ),
                         ),
                         Text(
-                          '${visible.length} of ${_contacts.length} saved',
+                          '${visible.length} of ${_contacts.length} saved • ${dateEntries.length} ${dateEntries.length == 1 ? 'day' : 'days'}',
                           style: TextStyle(
                             fontFamily: 'Inter',
                             fontSize: 12,
@@ -1772,8 +2004,9 @@ class _ContactsDialogState extends State<_ContactsDialog> {
               ),
               const SizedBox(height: 10),
               Divider(color: AppTheme.border(context), height: 1),
+              const SizedBox(height: 10),
               Expanded(
-                child: visible.isEmpty
+                child: dateEntries.isEmpty
                     ? Center(
                         child: Text(
                           _contacts.isEmpty
@@ -1785,108 +2018,118 @@ class _ContactsDialogState extends State<_ContactsDialog> {
                       )
                     : ListView.separated(
                         physics: const BouncingScrollPhysics(),
-                        itemCount: visible.length,
-                        separatorBuilder: (_, __) => Divider(color: AppTheme.border(context), height: 1),
+                        itemCount: dateEntries.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (_, i) {
-                          final contact = visible[i];
-                          final sources = contact.sources.toList()..sort();
-                          return ListTile(
-                            dense: true,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                            leading: CircleAvatar(
-                              radius: 17,
-                              backgroundColor: AppTheme.primaryBlue.withValues(alpha: 0.12),
-                              child: Text(
-                                contact.email[0].toUpperCase(),
-                                style: TextStyle(color: accent, fontWeight: FontWeight.w700, fontSize: 13),
-                              ),
-                            ),
-                            title: Text(
-                              contact.email,
-                              style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context)),
-                            ),
-                            subtitle: (sources.isEmpty && contact.savedDate == null)
-                                ? null
-                                : Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Wrap(
-                                      spacing: 4,
-                                      runSpacing: 3,
-                                      crossAxisAlignment: WrapCrossAlignment.center,
-                                      children: [
-                                        if (contact.savedDate != null)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                                            decoration: BoxDecoration(
-                                              color: AppTheme.surfaceBg(context),
-                                              borderRadius: BorderRadius.circular(6),
-                                              border: Border.all(color: AppTheme.border(context)),
-                                            ),
-                                            child: Text(
-                                              contact.savedDate!,
-                                              style: TextStyle(fontFamily: 'Inter', fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.textSecondary(context)),
-                                            ),
-                                          ),
-                                        ...sources.map((s) {
-                                          final c = _sourceColor(s);
-                                          return Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                                            decoration: BoxDecoration(
-                                              color: c.withValues(alpha: 0.12),
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                            child: Text(
-                                              s,
-                                              style: TextStyle(fontFamily: 'Inter', fontSize: 10, fontWeight: FontWeight.w700, color: c),
-                                            ),
-                                          );
-                                        }),
-                                      ],
-                                    ),
-                                  ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Copy email',
-                                  icon: Icon(Icons.copy_rounded, size: 16, color: AppTheme.textSecondary(context)),
-                                  onPressed: () {
-                                    Clipboard.setData(ClipboardData(text: contact.email));
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Copied ${contact.email}')),
-                                    );
-                                  },
+                          final entry = dateEntries[i];
+                          final dateKey = entry.key;
+                          final group = entry.value;
+                          final day = dateKey == 'Earlier' ? '' : DateHelpers.weekdayName(dateKey);
+                          final dateLabel = day.isNotEmpty ? '$dateKey ($day)' : dateKey;
+                          final latestTime = group.map((c) => c.savedTime).whereType<String>().firstOrNull;
+                          final groupSources = group.expand((c) => c.sources).toSet().toList()..sort();
+
+                          return Material(
+                            color: AppTheme.surfaceBg(context),
+                            borderRadius: BorderRadius.circular(14),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () => _openDateContactsPopup(dateKey, group),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: AppTheme.border(context)),
                                 ),
-                                IconButton(
-                                  tooltip: 'Remove contact',
-                                  icon: const Icon(Icons.delete_outline_rounded, size: 17, color: AppTheme.errorRed),
-                                  onPressed: () async {
-                                    final confirm = await showBlurredDialog<bool>(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Delete Contact?', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-                                        content: Text('Remove "${contact.email}" from saved contacts?', style: const TextStyle(fontFamily: 'Inter')),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(ctx, false),
-                                            child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', color: AppTheme.textMid)),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 38,
+                                      height: 38,
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primaryBlue.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Icon(Icons.calendar_month_rounded, size: 19, color: accent),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  dateLabel,
+                                                  style: TextStyle(
+                                                    fontFamily: 'Outfit',
+                                                    fontSize: 14.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: AppTheme.textPrimary(context),
+                                                  ),
+                                                ),
+                                              ),
+                                              if (latestTime != null) ...[
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  latestTime,
+                                                  style: TextStyle(
+                                                    fontFamily: 'Inter',
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: AppTheme.textSecondary(context),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
                                           ),
-                                          ElevatedButton(
-                                            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                                            onPressed: () => Navigator.pop(ctx, true),
-                                            child: const Text('Delete', style: TextStyle(fontFamily: 'Inter', color: Colors.white)),
-                                          ),
+                                          if (groupSources.isNotEmpty) ...[
+                                            const SizedBox(height: 5),
+                                            Wrap(
+                                              spacing: 5,
+                                              runSpacing: 4,
+                                              children: groupSources.map((s) {
+                                                final c = _sourceColor(s);
+                                                return Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                                  decoration: BoxDecoration(
+                                                    color: c.withValues(alpha: 0.12),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: Text(
+                                                    s,
+                                                    style: TextStyle(fontFamily: 'Inter', fontSize: 10, fontWeight: FontWeight.w700, color: c),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ],
                                         ],
                                       ),
-                                    );
-                                    if (confirm != true) return;
-                                    await StorageService.deleteContact(contact.email);
-                                    if (!mounted) return;
-                                    setState(() => _contacts.removeWhere((c) => c.email == contact.email));
-                                  },
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primaryBlue.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        '${group.length}',
+                                        style: TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: accent,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: AppTheme.textSecondary(context)),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           );
                         },
@@ -2140,6 +2383,16 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                               itemBuilder: (ctx, idx) {
                                 final r = email.recipients[idx];
                                 final rStatus = email.recipientStatuses[r];
+                                final sendDt = email.recipientSendTimes[r] ??
+                                    startDt?.add(Duration(minutes: idx * email.delayMinutes));
+                                final timeLabel = sendDt == null
+                                    ? null
+                                    : () {
+                                        final h = sendDt.hour % 12 == 0 ? 12 : sendDt.hour % 12;
+                                        final m = sendDt.minute.toString().padLeft(2, '0');
+                                        final ap = sendDt.hour >= 12 ? 'PM' : 'AM';
+                                        return '${h.toString().padLeft(2, '0')}:$m $ap';
+                                      }();
                                 IconData icon;
                                 Color color;
                                 if (rStatus == 'sent' || (rStatus == null && email.status == 'Success')) {
@@ -2164,6 +2417,27 @@ class _DetailsDialogState extends State<_DetailsDialog> {
                                       Expanded(
                                         child: Text(r, style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppTheme.textPrimary(context))),
                                       ),
+                                      if (timeLabel != null) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: color.withValues(alpha: 0.10),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            timeLabel,
+                                            style: TextStyle(
+                                              fontFamily: 'Inter',
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: rStatus == 'sent' || (rStatus == null && email.status == 'Success')
+                                                  ? AppTheme.successGreen
+                                                  : AppTheme.textSecondary(ctx),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 );

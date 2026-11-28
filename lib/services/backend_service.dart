@@ -204,7 +204,7 @@ class BackendService {
       '?select=id,schedule_name,sender_email,type,subject,body,daily_limit,delay_minutes,'
       'total_count,sent_count,failed_count,status,force_weekend,queued_after,'
       'pdf_name,scheduled_date,scheduled_time,merge_meta,created_at,'
-      'email_jobs(recipient_email,status,error_message,send_at)'
+      'email_jobs(recipient_email,status,error_message,send_at,sent_at)'
       '&email_jobs.order=send_at.asc'
       '&order=created_at.desc',
     );
@@ -250,6 +250,7 @@ class BackendService {
     final jobs = (row['email_jobs'] as List<dynamic>?) ?? const [];
     final recipients = <String>[];
     final statuses = <String, String>{};
+    final sendTimes = <String, DateTime>{};
     DateTime? nextSendAt;
     for (final j in jobs) {
       final jm = j as Map<String, dynamic>;
@@ -257,16 +258,25 @@ class BackendService {
       if (email.isEmpty) continue;
       recipients.add(email);
       final js = (jm['status'] ?? 'pending').toString();
+      final scheduledDt = DateTime.tryParse((jm['send_at'] ?? '').toString())?.toLocal();
+      final sentDt = DateTime.tryParse((jm['sent_at'] ?? '').toString())?.toLocal();
       if (js == 'sending') {
         statuses[email] = 'inProcess';
+        if (scheduledDt != null) sendTimes[email] = scheduledDt;
       } else if (js == 'failed') {
         final err = (jm['error_message'] ?? '').toString();
         statuses[email] = err.isNotEmpty ? 'failed ($err)' : 'failed';
+        if (scheduledDt != null) sendTimes[email] = scheduledDt;
       } else if (js == 'sent') {
         statuses[email] = 'sent';
+        final exact = sentDt ?? scheduledDt;
+        if (exact != null) sendTimes[email] = exact;
       } else {
         statuses[email] = 'pending';
-        nextSendAt ??= DateTime.tryParse((jm['send_at'] ?? '').toString())?.toLocal();
+        if (scheduledDt != null) {
+          sendTimes[email] = scheduledDt;
+          nextSendAt ??= scheduledDt;
+        }
       }
     }
 
@@ -310,6 +320,7 @@ class BackendService {
       createdAt: createdAtStr,
       pdfName: row['pdf_name']?.toString(),
       recipientStatuses: statuses,
+      recipientSendTimes: sendTimes,
       isMerged: isMerged,
       mergedSourceIds: mergeMeta?['mergedSourceIds'] != null
           ? List<String>.from(mergeMeta!['mergedSourceIds'] as List)

@@ -10,7 +10,8 @@ class SavedContact {
   final String email;
   final Set<String> sources;
   final String? savedDate;
-  const SavedContact({required this.email, required this.sources, this.savedDate});
+  final String? savedTime;
+  const SavedContact({required this.email, required this.sources, this.savedDate, this.savedTime});
 }
 
 /// Local persistence for sender autocomplete history, extracted contacts, templates, and theme preference.
@@ -19,6 +20,7 @@ class StorageService {
   static const String _contactsKey = 'saved_contacts';
   static const String _contactsSourcesKey = 'saved_contacts_sources';
   static const String _contactsDatesKey = 'saved_contacts_dates';
+  static const String _contactsTimesKey = 'saved_contacts_times';
   static const String _dailyLimitsHistoryKey = 'saved_daily_limits_history';
   static const String _templatesKey = 'saved_templates';
   static const String _draftsKey = 'saved_schedule_drafts';
@@ -89,13 +91,25 @@ class StorageService {
         dates[entry.key] = entry.value.toString();
       }
     }
+    final rawTimes = prefs.getString(_contactsTimesKey);
+    final Map<String, String> times = {};
+    if (rawTimes != null && rawTimes.isNotEmpty) {
+      final decoded = jsonDecode(rawTimes) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        times[entry.key] = entry.value.toString();
+      }
+    }
+    final now = DateTime.now();
     final today = DateHelpers.todayDmy();
+    final h12 = now.hour % 12 == 0 ? 12 : now.hour % 12;
+    final nowTime = '${h12.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} ${now.hour >= 12 ? 'PM' : 'AM'}';
     for (final raw in newEmails) {
       final email = raw.trim().toLowerCase();
       if (email.isEmpty) continue;
       contacts.add(email);
       meta.putIfAbsent(email, () => <String>{}).add(source);
       dates[email] = today;
+      times[email] = nowTime;
     }
     await prefs.setStringList(_contactsKey, contacts.toList());
     await prefs.setString(
@@ -103,6 +117,7 @@ class StorageService {
       jsonEncode(meta.map((k, v) => MapEntry(k, v.toList()))),
     );
     await prefs.setString(_contactsDatesKey, jsonEncode(dates));
+    await prefs.setString(_contactsTimesKey, jsonEncode(times));
   }
 
   /// Returns all saved contacts with their source tags (`Single`, `Multiple`, `PDF`) and saved date.
@@ -125,12 +140,25 @@ class StorageService {
         dates[entry.key] = entry.value.toString();
       }
     }
+    final rawTimes = prefs.getString(_contactsTimesKey);
+    final Map<String, String> times = {};
+    if (rawTimes != null && rawTimes.isNotEmpty) {
+      final decoded = jsonDecode(rawTimes) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        times[entry.key] = entry.value.toString();
+      }
+    }
     final seen = <String>{};
     final result = <SavedContact>[];
     for (final raw in [...list, ...meta.keys]) {
       final email = raw.trim().toLowerCase();
       if (email.isEmpty || !seen.add(email)) continue;
-      result.add(SavedContact(email: email, sources: meta[email] ?? <String>{}, savedDate: dates[email]));
+      result.add(SavedContact(
+        email: email,
+        sources: meta[email] ?? <String>{},
+        savedDate: dates[email],
+        savedTime: times[email],
+      ));
     }
     return result;
   }
@@ -154,6 +182,12 @@ class StorageService {
       final decoded = jsonDecode(rawDates) as Map<String, dynamic>;
       decoded.remove(normalized);
       await prefs.setString(_contactsDatesKey, jsonEncode(decoded));
+    }
+    final rawTimes = prefs.getString(_contactsTimesKey);
+    if (rawTimes != null && rawTimes.isNotEmpty) {
+      final decoded = jsonDecode(rawTimes) as Map<String, dynamic>;
+      decoded.remove(normalized);
+      await prefs.setString(_contactsTimesKey, jsonEncode(decoded));
     }
   }
 

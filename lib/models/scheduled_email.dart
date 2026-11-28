@@ -18,6 +18,8 @@ class ScheduledEmail {
   final String? pdfName;
   // Per-recipient statuses: 'sent', 'failed', 'inProcess', 'pending'
   final Map<String, String> recipientStatuses;
+  // Per-recipient exact send/scheduled timestamp (local time)
+  final Map<String, DateTime> recipientSendTimes;
 
   // ── Merge / Queue fields ──────────────────────────────────────────────
   /// True if this schedule was created by merging two PDF schedules
@@ -61,6 +63,7 @@ class ScheduledEmail {
     this.createdAt,
     this.pdfName,
     Map<String, String>? recipientStatuses,
+    Map<String, DateTime>? recipientSendTimes,
     this.isMerged = false,
     List<String>? mergedSourceIds,
     Map<String, int>? mergeContributions,
@@ -72,6 +75,7 @@ class ScheduledEmail {
     int? lastUpdateEpoch,
     this.nextSendAt,
   })  : recipientStatuses = recipientStatuses ?? {},
+        recipientSendTimes = recipientSendTimes ?? {},
         mergedSourceIds = mergedSourceIds ?? [],
         mergeContributions = mergeContributions ?? {},
         mergeSourceNames = mergeSourceNames ?? {},
